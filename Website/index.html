@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Download OmniDrive for Windows. Unify multiple Google Drive accounts in one secure desktop file cockpit."
+    />
+    <title>OmniDrive | Unified Cloud Storage For Windows</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-orb page-orb-a"></div>
+    <div class="page-orb page-orb-b"></div>
+    <div class="page-grid"></div>
+
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="OmniDrive home">
+        <span class="brand-mark">OD</span>
+        <span>OmniDrive</span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary navigation">
+        <a href="#features">Features</a>
+        <a href="#security">Security</a>
+        <a href="#download">Download</a>
+      </nav>
+
+      <a
+        class="nav-download"
+        href="https://github.com/AbinanJeya/OmniDrive/releases/tag/nightly"
+        rel="noreferrer"
+      >
+        Download
+      </a>
+    </header>
+
+    <main id="top">
+      <section class="hero section-shell">
+        <div class="hero-copy">
+          <p class="eyebrow">Desktop app for your cloud files</p>
+          <h1>Your cloud drives, gathered into one luminous cockpit.</h1>
+          <p class="hero-text">
+            OmniDrive brings multiple Google Drive accounts into a single desktop workspace with
+            fast local indexing, secure OS keyring storage, file previews, transfers, and
+            Google Drive-style browsing.
+          </p>
+
+          <div class="hero-actions">
+            <a
+              class="button button-primary"
+              href="https://github.com/AbinanJeya/OmniDrive/releases/tag/nightly"
+              rel="noreferrer"
+            >
+              Download for Windows
+            </a>
+            <a class="button button-secondary" href="https://github.com/AbinanJeya/OmniDrive" rel="noreferrer">
+              View on GitHub
+            </a>
+          </div>
+        </div>
+
+        <div class="hero-card glass-panel" aria-label="OmniDrive app preview">
+          <div class="window-bar">
+            <span></span>
+            <span></span>
+            <span></span>
+            <p>OmniDrive desktop preview</p>
+          </div>
+          <img
+            src="./app-preview.png"
+            alt="OmniDrive desktop app showing a unified file browser, sidebar storage locations, and file details."
+          />
+        </div>
+      </section>
+
+      <section class="trust-strip section-shell" aria-label="Product highlights">
+        <div>
+          <strong>Multi-account Drive</strong>
+          <span>Browse linked Google Drive accounts from one place.</span>
+        </div>
+        <div>
+          <strong>Local-first control</strong>
+          <span>Tokens live in the OS keyring; metadata is indexed locally.</span>
+        </div>
+        <div>
+          <strong>Windows installer</strong>
+          <span>Packaged with Tauri as an NSIS installer.</span>
+        </div>
+      </section>
+
+      <section id="features" class="feature-section section-shell">
+        <div class="section-heading">
+          <p class="eyebrow">Built for real file work</p>
+          <h2>One workspace for the Drive sprawl.</h2>
+          <p>
+            OmniDrive is not another cloud storage account. It is a practical desktop layer over
+            the accounts you already use.
+          </p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature-card glass-panel">
+            <span class="feature-icon">FS</span>
+            <h3>Unified browsing</h3>
+            <p>
+              Move through all linked Google Drive accounts, individual account scopes, folders,
+              categories, list view, or grid view without switching browser tabs.
+            </p>
+          </article>
+          <article class="feature-card glass-panel">
+            <span class="feature-icon">IX</span>
+            <h3>Fast local index</h3>
+            <p>
+              Local metadata caching makes browsing feel responsive and gives the app a stable
+              snapshot to work from between sync operations.
+            </p>
+          </article>
+          <article class="feature-card glass-panel">
+            <span class="feature-icon">PV</span>
+            <h3>Preview cockpit</h3>
+            <p>
+              Preview common file types in the app, cache preview assets safely, and keep context
+              while deciding what to move, download, share, or remove.
+            </p>
+          </article>
+          <article class="feature-card glass-panel">
+            <span class="feature-icon">OP</span>
+            <h3>Drive operations</h3>
+            <p>
+              Download, upload, rename, delete, share, create folders, and transfer files across
+              accounts through tracked background jobs.
+            </p>
+          </article>
+          <article class="feature-card glass-panel">
+            <span class="feature-icon">SI</span>
+            <h3>Storage insight</h3>
+            <p>
+              Surface account health, large-file cleanup opportunities, duplicate candidates, and
+              low-space signals from the same local model.
+            </p>
+          </article>
+          <article class="feature-card glass-panel">
+            <span class="feature-icon">PH</span>
+            <h3>Photos aware</h3>
+            <p>
+              Connect Google Photos through the picker-based flow while keeping expectations clear:
+              Photos support follows Google's API limits.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section id="security" class="split-section section-shell">
+        <div class="glass-panel security-panel">
+          <p class="eyebrow">Privacy posture</p>
+          <h2>Your files stay with your providers.</h2>
+          <p>
+            OmniDrive does not run a separate cloud backend for your data. It connects from your
+            desktop app, stores OAuth token material through the operating system keyring, and
+            keeps local app state on your machine.
+          </p>
+          <ul class="check-list">
+            <li>Google OAuth is handled by the desktop app.</li>
+            <li>Secrets are persisted through secure OS keyring storage.</li>
+            <li>Preview cache files are app-owned local assets.</li>
+            <li>Transfers and mutations are tracked as visible jobs.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="download" class="download-section section-shell glass-panel">
+        <p class="eyebrow">Get OmniDrive</p>
+        <h2>Download OmniDrive and get to work.</h2>
+        <p>
+          Install OmniDrive, connect your Google accounts, and start browsing your cloud storage
+          from one desktop file cockpit.
+        </p>
+        <div class="download-actions">
+          <a
+            class="button button-primary"
+            href="https://github.com/AbinanJeya/OmniDrive/releases/tag/nightly"
+            rel="noreferrer"
+          >
+            Download for Windows
+          </a>
+          <a class="button button-secondary" href="#features">See features</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div>
+        <strong>OmniDrive</strong>
+        <span>Unified cloud storage for the desktop.</span>
+      </div>
+      <nav aria-label="Footer navigation">
+        <a href="https://github.com/AbinanJeya/OmniDrive" rel="noreferrer">GitHub</a>
+        <a href="https://github.com/AbinanJeya/OmniDrive/releases/tag/nightly" rel="noreferrer">
+          Releases
+        </a>
+      </nav>
+    </footer>
+    <script>
+      (() => {
+        const card = document.querySelector(".hero-card");
+        if (!card || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          return;
+        }
+
+        const handleMove = (event) => {
+          const rect = card.getBoundingClientRect();
+          const x = (event.clientX - rect.left) / rect.width - 0.5;
+          const y = (event.clientY - rect.top) / rect.height - 0.5;
+          card.style.setProperty("--card-rotate-x", `${(-y * 5).toFixed(2)}deg`);
+          card.style.setProperty("--card-rotate-y", `${(x * 7 - 4).toFixed(2)}deg`);
+          card.style.setProperty("--card-shift-x", `${(x * 18).toFixed(2)}px`);
+          card.style.setProperty("--card-shift-y", `${(y * 14).toFixed(2)}px`);
+        };
+
+        const resetCard = () => {
+          card.style.removeProperty("--card-rotate-x");
+          card.style.removeProperty("--card-rotate-y");
+          card.style.removeProperty("--card-shift-x");
+          card.style.removeProperty("--card-shift-y");
+        };
+
+        card.addEventListener("mousemove", handleMove);
+        card.addEventListener("mouseleave", resetCard);
+      })();
+    </script>
+  </body>
+</html>

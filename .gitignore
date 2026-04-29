@@ -1,0 +1,8 @@
+dist
+node_modules
+src-tauri/target
+.env
+.env.*
+!.env.example
+.local-notes/
+.superpowers/
