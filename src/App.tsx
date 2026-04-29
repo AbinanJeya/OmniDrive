@@ -137,7 +137,7 @@ declare global {
           theme?: 'dark' | 'light' | 'auto';
           callback?: (token: string) => void;
           'expired-callback'?: () => void;
-          'error-callback'?: () => void;
+          'error-callback'?: (errorCode?: string | number) => boolean | void;
         },
       ) => string;
       remove?: (widgetId: string) => void;
@@ -150,21 +150,40 @@ interface BrowsePreferences {
   filters: FilterModel;
 }
 
-function getTurnstileLoadErrorMessage(): string {
+function getTurnstileLoadErrorMessage(errorCode?: string | number): string {
+  const code = errorCode ? String(errorCode) : '';
+  const suffix = code ? ` Turnstile error ${code}.` : '';
+
+  if (code === '110100' || code === '110110' || code === '400020') {
+    return `Security check is using an invalid Turnstile site key.${suffix}`;
+  }
+
+  if (code === '110200') {
+    return `Security check is not allowed on this hostname. Add the current hostname to this Cloudflare Turnstile widget, then reload OmniDrive.${suffix}`;
+  }
+
+  if (code.startsWith('300') || code.startsWith('600')) {
+    return `Security check was rejected by this browser. Try a normal Chrome or Edge window with extensions/VPN disabled, or use the desktop app.${suffix}`;
+  }
+
+  if (code === '200500') {
+    return `Security check iframe could not load. Check that challenges.cloudflare.com is not blocked by the browser, network, or an extension.${suffix}`;
+  }
+
   if (typeof window === 'undefined') {
-    return 'Security check could not load. Try again in a moment.';
+    return `Security check could not load. Try again in a moment.${suffix}`;
   }
 
   const hostname = window.location.hostname;
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'Security check could not load on localhost. Add localhost and 127.0.0.1 to this Cloudflare Turnstile widget, then reload OmniDrive.';
+    return `Security check could not load on localhost. Add localhost and 127.0.0.1 to this Cloudflare Turnstile widget, then reload OmniDrive.${suffix}`;
   }
 
   if (hostname === 'tauri.localhost') {
-    return 'Security check could not load in the desktop app. Add tauri.localhost to this Cloudflare Turnstile widget, then reopen OmniDrive.';
+    return `Security check could not load in the desktop app. Add tauri.localhost to this Cloudflare Turnstile widget, then reopen OmniDrive.${suffix}`;
   }
 
-  return 'Security check could not load. Check this Cloudflare Turnstile widget allows the current app hostname.';
+  return `Security check could not load. Check this Cloudflare Turnstile widget allows the current app hostname.${suffix}`;
 }
 
 const VIEW_MODE_STORAGE_KEY = 'omnidrive:view-mode';
@@ -2919,9 +2938,10 @@ function AuthShell({
         'expired-callback': () => {
           setCaptchaToken('');
         },
-        'error-callback': () => {
+        'error-callback': (errorCode) => {
           setCaptchaToken('');
-          setLocalErrorMessage(getTurnstileLoadErrorMessage());
+          setLocalErrorMessage(getTurnstileLoadErrorMessage(errorCode));
+          return true;
         },
       });
     };
@@ -2937,6 +2957,11 @@ function AuthShell({
       script.async = true;
       script.defer = true;
       script.addEventListener('load', renderCaptcha, { once: true });
+      script.addEventListener('error', () => {
+        if (!cancelled) {
+          setLocalErrorMessage(getTurnstileLoadErrorMessage('200500'));
+        }
+      }, { once: true });
       if (!existingScript) {
         document.head.appendChild(script);
       }
