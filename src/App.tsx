@@ -1123,7 +1123,7 @@ export default function App() {
     navigate({ view: 'browse', scope: { kind: 'all' }, category: 'all', folderPath: '/' }, true);
   }
 
-  async function handleAuthSignIn(email: string, password: string) {
+  async function handleAuthSignIn(email: string, password: string, captchaToken?: string) {
     if (!hasSupabaseConfig) {
       setAuthErrorMessage('Supabase is not configured for this build.');
       return;
@@ -1138,6 +1138,7 @@ export default function App() {
         ...supabaseConfig,
         email,
         password,
+        captchaToken,
       });
 
       if (!isVerifiedSession(session)) {
@@ -1214,7 +1215,7 @@ export default function App() {
     }
   }
 
-  async function handlePasswordReset(email: string) {
+  async function handlePasswordReset(email: string, captchaToken?: string) {
     if (!hasSupabaseConfig) {
       setAuthErrorMessage('Supabase is not configured for this build.');
       return;
@@ -1228,6 +1229,7 @@ export default function App() {
       await requestPasswordReset({
         ...supabaseConfig,
         email,
+        captchaToken,
       });
       setAuthPendingEmail(email);
       setAuthScreenMode('signIn');
@@ -1308,7 +1310,7 @@ export default function App() {
     setAuthNoticeMessage(null);
   }
 
-  async function handleGoogleSignIn() {
+  async function handleGoogleSignIn(captchaToken?: string) {
     if (!hasSupabaseConfig) {
       setAuthErrorMessage('Supabase is not configured for this build.');
       return;
@@ -1320,7 +1322,7 @@ export default function App() {
 
     try {
       if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-        const desktopSession = await startDesktopGoogleAuth(supabaseConfig);
+        const desktopSession = await startDesktopGoogleAuth(supabaseConfig, captchaToken);
         await unlockWithSession(desktopSession);
         return;
       }
@@ -1331,6 +1333,7 @@ export default function App() {
           ...supabaseConfig,
           provider: 'google',
           redirectTo,
+          captchaToken,
         }),
       );
     } catch (error) {
@@ -2283,14 +2286,14 @@ export default function App() {
           setAuthNoticeMessage(null);
           setAuthScreenMode(mode);
         }}
-        onSignIn={(email, password) => {
-          void handleAuthSignIn(email, password);
+        onSignIn={(email, password, captchaToken) => {
+          void handleAuthSignIn(email, password, captchaToken);
         }}
         onSignUp={(email, password, captchaToken) => {
           void handleAuthSignUp(email, password, captchaToken);
         }}
-        onGoogleSignIn={() => {
-          void handleGoogleSignIn();
+        onGoogleSignIn={(captchaToken) => {
+          void handleGoogleSignIn(captchaToken);
         }}
         onSignOut={() => {
           void handleLockedSignOut();
@@ -2298,8 +2301,8 @@ export default function App() {
         onVerifyEmailCheck={() => {
           void handleVerifyEmailCheck();
         }}
-        onPasswordReset={(email) => {
-          void handlePasswordReset(email);
+        onPasswordReset={(email, captchaToken) => {
+          void handlePasswordReset(email, captchaToken);
         }}
         onResendVerification={() => {
           void handleResendVerification();
@@ -2846,12 +2849,12 @@ function AuthShell({
   isSubmitting: boolean;
   turnstileSiteKey: string;
   onSwitchMode: (mode: AuthShellMode) => void;
-  onSignIn: (email: string, password: string) => void;
+  onSignIn: (email: string, password: string, captchaToken?: string) => void;
   onSignUp: (email: string, password: string, captchaToken?: string) => void;
-  onGoogleSignIn: () => void;
+  onGoogleSignIn: (captchaToken?: string) => void;
   onSignOut: () => void;
   onVerifyEmailCheck: () => void;
-  onPasswordReset: (email: string) => void;
+  onPasswordReset: (email: string, captchaToken?: string) => void;
   onResendVerification: () => void;
 }) {
   const [email, setEmail] = useState(pendingEmail);
@@ -2861,7 +2864,7 @@ function AuthShell({
   const [captchaToken, setCaptchaToken] = useState('');
   const captchaContainerRef = useRef<HTMLDivElement>(null);
   const captchaWidgetIdRef = useRef<string | null>(null);
-  const captchaRequired = mode === 'signUp' && Boolean(turnstileSiteKey);
+  const captchaRequired = mode !== 'verifyEmail' && Boolean(turnstileSiteKey);
 
   useEffect(() => {
     if (pendingEmail) {
@@ -2985,6 +2988,12 @@ function AuthShell({
             </div>
           ) : null}
 
+          {captchaRequired ? (
+            <div className="mt-5 rounded-2xl border border-cyan-100/10 bg-white/[0.035] px-4 py-4">
+              <div className="min-h-[65px]" ref={captchaContainerRef} />
+            </div>
+          ) : null}
+
           {mode === 'verifyEmail' ? (
             <div className="mt-6 space-y-4">
               <div className="rounded-2xl border border-cyan-100/10 bg-white/[0.035] px-4 py-4">
@@ -3023,7 +3032,13 @@ function AuthShell({
                 <>
                   <button
                     type="button"
-                    onClick={onGoogleSignIn}
+                    onClick={() => {
+                      if (captchaRequired && !captchaToken) {
+                        setLocalErrorMessage('Please complete the security check.');
+                        return;
+                      }
+                      onGoogleSignIn(captchaToken || undefined);
+                    }}
                     disabled={isLoading || isSubmitting}
                     className="flex w-full items-center justify-center gap-3 rounded-full border border-cyan-100/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-white/[0.07] disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -3047,7 +3062,12 @@ function AuthShell({
                   }
 
                   if (mode === 'forgotPassword') {
-                    onPasswordReset(email.trim());
+                    if (captchaRequired && !captchaToken) {
+                      setLocalErrorMessage('Please complete the security check.');
+                      return;
+                    }
+
+                    onPasswordReset(email.trim(), captchaToken || undefined);
                     return;
                   }
 
@@ -3070,7 +3090,12 @@ function AuthShell({
                       return;
                     }
 
-                    onSignIn(email.trim(), password);
+                    if (captchaRequired && !captchaToken) {
+                      setLocalErrorMessage('Please complete the security check.');
+                      return;
+                    }
+
+                    onSignIn(email.trim(), password, captchaToken || undefined);
                   }
                 }}
               >
@@ -3140,12 +3165,6 @@ function AuthShell({
                       />
                     </div>
                   </label>
-                ) : null}
-
-                {mode === 'signUp' && turnstileSiteKey ? (
-                  <div className="rounded-2xl border border-cyan-100/10 bg-white/[0.035] px-4 py-4">
-                    <div className="min-h-[65px]" ref={captchaContainerRef} />
-                  </div>
                 ) : null}
 
                 <button

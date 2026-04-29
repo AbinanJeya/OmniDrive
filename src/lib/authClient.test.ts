@@ -230,6 +230,38 @@ describe('authClient', () => {
     });
   });
 
+  it('sends a captcha token when signing in with password', async () => {
+    installLocalStorageMock();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+        expires_in: 3600,
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: 'user-1',
+        email: 'zia@example.com',
+        email_confirmed_at: '2026-04-29T00:00:00Z',
+      }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await signInWithPassword({
+      supabaseUrl: 'https://demo.supabase.co',
+      supabaseAnonKey: 'anon-key',
+      email: 'zia@example.com',
+      password: 'password123',
+      captchaToken: 'captcha-token',
+    });
+
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      email: 'zia@example.com',
+      password: 'password123',
+      gotrue_meta_security: {
+        captcha_token: 'captcha-token',
+      },
+    });
+  });
+
   it('supports resend verification, password reset, and sign out requests', async () => {
     const { storage } = installLocalStorageMock();
     storeAuthSession(createVerifiedSession());
@@ -299,6 +331,18 @@ describe('authClient', () => {
     expect(url.href.startsWith('https://demo.supabase.co/auth/v1/authorize')).toBe(true);
     expect(url.searchParams.get('provider')).toBe('google');
     expect(url.searchParams.get('redirect_to')).toBe('http://localhost:5173');
+  });
+
+  it('builds a Google OAuth URL with captcha token when supplied', () => {
+    const url = new URL(buildSupabaseOAuthUrl({
+      supabaseUrl: 'https://demo.supabase.co',
+      supabaseAnonKey: 'anon-key',
+      provider: 'google',
+      redirectTo: 'http://localhost:5173',
+      captchaToken: 'captcha-token',
+    }));
+
+    expect(url.searchParams.get('captcha_token')).toBe('captcha-token');
   });
 
   it('consumes an implicit OAuth redirect hash into a stored session', async () => {

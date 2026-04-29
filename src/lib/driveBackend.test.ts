@@ -356,6 +356,31 @@ describe('loadVirtualDriveState', () => {
     expect(invoke).toHaveBeenNthCalledWith(2, 'start_supabase_google_login', {
       supabaseUrl: 'https://demo.supabase.co',
       supabaseAnonKey: 'anon-key',
+      captchaToken: undefined,
+    });
+  });
+
+  it('passes a captcha token into desktop Google auth when supplied', async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      accessToken: 'oauth-access',
+      refreshToken: 'oauth-refresh',
+      expiresAt: 1770000000,
+      user: {
+        id: 'user-1',
+        email: 'zia@example.com',
+        emailConfirmedAt: '2026-04-29T12:00:00.000Z',
+      },
+    });
+
+    await startDesktopGoogleAuth({
+      supabaseUrl: 'https://demo.supabase.co',
+      supabaseAnonKey: 'anon-key',
+    }, 'turnstile-token', invoke);
+
+    expect(invoke).toHaveBeenCalledWith('start_supabase_google_login', {
+      supabaseUrl: 'https://demo.supabase.co',
+      supabaseAnonKey: 'anon-key',
+      captchaToken: 'turnstile-token',
     });
   });
 });

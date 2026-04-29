@@ -21,6 +21,7 @@ export interface SupabaseConfig {
 export interface SignInWithPasswordInput extends SupabaseConfig {
   email: string;
   password: string;
+  captchaToken?: string;
 }
 
 export interface SignUpWithPasswordInput extends SupabaseConfig {
@@ -31,6 +32,7 @@ export interface SignUpWithPasswordInput extends SupabaseConfig {
 
 export interface EmailOnlyRequest extends SupabaseConfig {
   email: string;
+  captchaToken?: string;
 }
 
 export interface SignOutSessionInput extends SupabaseConfig {
@@ -40,6 +42,7 @@ export interface SignOutSessionInput extends SupabaseConfig {
 export interface OAuthUrlInput extends SupabaseConfig {
   provider: 'google';
   redirectTo: string;
+  captchaToken?: string;
 }
 
 export interface SignUpResult {
@@ -160,6 +163,9 @@ export function buildSupabaseOAuthUrl(input: OAuthUrlInput): string {
   url.searchParams.set('provider', input.provider);
   url.searchParams.set('redirect_to', input.redirectTo);
   url.searchParams.set('scopes', 'email profile');
+  if (input.captchaToken) {
+    url.searchParams.set('captcha_token', input.captchaToken);
+  }
   return url.toString();
 }
 
@@ -195,13 +201,21 @@ export async function consumeOAuthRedirectSession(
 }
 
 export async function signInWithPassword(input: SignInWithPasswordInput): Promise<StoredAuthSession> {
+  const body: Record<string, unknown> = {
+    email: input.email,
+    password: input.password,
+  };
+
+  if (input.captchaToken) {
+    body.gotrue_meta_security = {
+      captcha_token: input.captchaToken,
+    };
+  }
+
   const sessionResponse = await fetch(`${input.supabaseUrl}/auth/v1/token?grant_type=password`, {
     method: 'POST',
     headers: headers(input),
-    body: JSON.stringify({
-      email: input.email,
-      password: input.password,
-    }),
+    body: JSON.stringify(body),
   });
   const sessionPayload = await readJsonResponse<SupabaseSessionResponse>(sessionResponse);
   const userPayload = await fetchCurrentUser(input, sessionPayload.access_token);
@@ -278,25 +292,41 @@ export async function signUpWithPassword(input: SignUpWithPasswordInput): Promis
 }
 
 export async function resendVerificationEmail(input: EmailOnlyRequest): Promise<void> {
+  const body: Record<string, unknown> = {
+    type: 'signup',
+    email: input.email,
+  };
+
+  if (input.captchaToken) {
+    body.gotrue_meta_security = {
+      captcha_token: input.captchaToken,
+    };
+  }
+
   const response = await fetch(`${input.supabaseUrl}/auth/v1/resend`, {
     method: 'POST',
     headers: headers(input),
-    body: JSON.stringify({
-      type: 'signup',
-      email: input.email,
-    }),
+    body: JSON.stringify(body),
   });
 
   await readJsonResponse<Record<string, never>>(response);
 }
 
 export async function requestPasswordReset(input: EmailOnlyRequest): Promise<void> {
+  const body: Record<string, unknown> = {
+    email: input.email,
+  };
+
+  if (input.captchaToken) {
+    body.gotrue_meta_security = {
+      captcha_token: input.captchaToken,
+    };
+  }
+
   const response = await fetch(`${input.supabaseUrl}/auth/v1/recover`, {
     method: 'POST',
     headers: headers(input),
-    body: JSON.stringify({
-      email: input.email,
-    }),
+    body: JSON.stringify(body),
   });
 
   await readJsonResponse<Record<string, never>>(response);

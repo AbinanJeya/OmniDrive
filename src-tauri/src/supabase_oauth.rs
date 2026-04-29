@@ -59,11 +59,13 @@ struct SupabaseOAuthSession {
   anon_key: String,
   redirect_uri: String,
   code_verifier: String,
+  captcha_token: Option<String>,
 }
 
 pub fn run_google_login(
   supabase_url: String,
   supabase_anon_key: String,
+  captcha_token: Option<String>,
 ) -> Result<SupabaseAuthSessionPayload, String> {
   let supabase_url = non_empty_value("Supabase URL", supabase_url)?;
   let anon_key = non_empty_value("Supabase anon key", supabase_anon_key)?;
@@ -79,6 +81,14 @@ pub fn run_google_login(
     anon_key,
     redirect_uri: format!("http://127.0.0.1:{port}/auth/callback"),
     code_verifier: random_urlsafe(64),
+    captcha_token: captcha_token.and_then(|value| {
+      let trimmed = value.trim().to_string();
+      if trimmed.is_empty() {
+        None
+      } else {
+        Some(trimmed)
+      }
+    }),
   };
   let auth_url = build_authorize_url(&session)?;
   let callback_session = session.clone();
@@ -106,6 +116,9 @@ fn build_authorize_url(session: &SupabaseOAuthSession) -> Result<Url, String> {
     .append_pair("scopes", "email profile")
     .append_pair("code_challenge", &code_challenge(&session.code_verifier))
     .append_pair("code_challenge_method", "s256");
+  if let Some(captcha_token) = &session.captcha_token {
+    url.query_pairs_mut().append_pair("captcha_token", captcha_token);
+  }
   Ok(url)
 }
 
@@ -293,6 +306,7 @@ mod tests {
       anon_key: "anon-key".into(),
       redirect_uri: "http://127.0.0.1:49152/auth/callback".into(),
       code_verifier: "code-verifier".into(),
+      captcha_token: None,
     };
 
     let url = build_authorize_url(&session).expect("authorize url");
@@ -302,6 +316,26 @@ mod tests {
     assert_eq!(
       url.query_pairs().find(|(key, _)| key == "redirect_to").map(|(_, value)| value.into_owned()),
       Some("http://127.0.0.1:49152/auth/callback".into()),
+    );
+  }
+
+  #[test]
+  fn authorize_url_includes_captcha_token_when_supplied() {
+    let session = SupabaseOAuthSession {
+      supabase_url: "https://demo.supabase.co".into(),
+      anon_key: "anon-key".into(),
+      redirect_uri: "http://127.0.0.1:49152/auth/callback".into(),
+      code_verifier: "code-verifier".into(),
+      captcha_token: Some("turnstile-token".into()),
+    };
+
+    let url = build_authorize_url(&session).expect("authorize url");
+
+    assert_eq!(
+      url.query_pairs()
+        .find(|(key, _)| key == "captcha_token")
+        .map(|(_, value)| value.into_owned()),
+      Some("turnstile-token".into()),
     );
   }
 }

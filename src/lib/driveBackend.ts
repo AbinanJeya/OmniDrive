@@ -162,15 +162,21 @@ export async function clearDesktopAppSession(
 
 export async function startDesktopGoogleAuth(
   supabaseConfig: DesktopSupabaseConfig,
+  captchaTokenOrInvoke?: string | TauriInvokeFn,
   invoke: TauriInvokeFn = tauriInvoke,
 ): Promise<DesktopAuthSession> {
-  if (invoke === tauriInvoke && !hasTauriRuntime()) {
+  const captchaToken = typeof captchaTokenOrInvoke === 'string' ? captchaTokenOrInvoke : undefined;
+  const actualInvoke =
+    typeof captchaTokenOrInvoke === 'function' ? captchaTokenOrInvoke : invoke;
+
+  if (actualInvoke === tauriInvoke && !hasTauriRuntime()) {
     throw new Error('Google sign-in is only available inside the desktop shell.');
   }
 
-  return invoke<DesktopAuthSession>('start_supabase_google_login', {
+  return actualInvoke<DesktopAuthSession>('start_supabase_google_login', {
     supabaseUrl: supabaseConfig.supabaseUrl,
     supabaseAnonKey: supabaseConfig.supabaseAnonKey,
+    captchaToken,
   });
 }
 

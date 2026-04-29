@@ -37,9 +37,10 @@ fn clear_app_session(state: tauri::State<'_, app_session::AppSessionState>) -> R
 async fn start_supabase_google_login(
   supabase_url: String,
   supabase_anon_key: String,
+  captcha_token: Option<String>,
 ) -> Result<supabase_oauth::SupabaseAuthSessionPayload, String> {
   tauri::async_runtime::spawn_blocking(move || {
-    supabase_oauth::run_google_login(supabase_url, supabase_anon_key)
+    supabase_oauth::run_google_login(supabase_url, supabase_anon_key, captcha_token)
   })
     .await
     .map_err(|err| err.to_string())?
