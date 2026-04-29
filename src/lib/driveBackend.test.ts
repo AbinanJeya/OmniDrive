@@ -17,6 +17,7 @@ import {
   updateDriveJob,
   updateAppSettings,
   transferDriveNodes,
+  startDesktopGoogleAuth,
 } from './driveBackend';
 
 const liveSnapshots: DriveSnapshot[] = [
@@ -318,5 +319,43 @@ describe('loadVirtualDriveState', () => {
     });
     expect(invoke).toHaveBeenNthCalledWith(2, 'clear_app_session');
     expect(sessionSummary.emailVerified).toBe(true);
+  });
+
+  it('passes Supabase config into desktop auth commands for installed builds', async () => {
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce({
+        userId: 'user-1',
+        email: 'zia@example.com',
+        emailVerified: true,
+      })
+      .mockResolvedValueOnce({
+        accessToken: 'oauth-access',
+        refreshToken: 'oauth-refresh',
+        expiresAt: 1770000000,
+        user: {
+          id: 'user-1',
+          email: 'zia@example.com',
+          emailConfirmedAt: '2026-04-29T12:00:00.000Z',
+        },
+      });
+
+    const supabaseConfig = {
+      supabaseUrl: 'https://demo.supabase.co',
+      supabaseAnonKey: 'anon-key',
+    };
+
+    await setDesktopAppSession('access-token', supabaseConfig, invoke);
+    await startDesktopGoogleAuth(supabaseConfig, invoke);
+
+    expect(invoke).toHaveBeenNthCalledWith(1, 'set_app_session', {
+      accessToken: 'access-token',
+      supabaseUrl: 'https://demo.supabase.co',
+      supabaseAnonKey: 'anon-key',
+    });
+    expect(invoke).toHaveBeenNthCalledWith(2, 'start_supabase_google_login', {
+      supabaseUrl: 'https://demo.supabase.co',
+      supabaseAnonKey: 'anon-key',
+    });
   });
 });
