@@ -22,8 +22,10 @@ fn ensure_app_session(app: &tauri::AppHandle) -> Result<(), String> {
 fn set_app_session(
   state: tauri::State<'_, app_session::AppSessionState>,
   access_token: String,
+  supabase_url: Option<String>,
+  supabase_anon_key: Option<String>,
 ) -> Result<app_session::AppSessionSummary, String> {
-  app_session::set_app_session(state, access_token)
+  app_session::set_app_session(state, access_token, supabase_url, supabase_anon_key)
 }
 
 #[tauri::command]
@@ -32,8 +34,13 @@ fn clear_app_session(state: tauri::State<'_, app_session::AppSessionState>) -> R
 }
 
 #[tauri::command]
-async fn start_supabase_google_login() -> Result<supabase_oauth::SupabaseAuthSessionPayload, String> {
-  tauri::async_runtime::spawn_blocking(supabase_oauth::run_google_login)
+async fn start_supabase_google_login(
+  supabase_url: String,
+  supabase_anon_key: String,
+) -> Result<supabase_oauth::SupabaseAuthSessionPayload, String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    supabase_oauth::run_google_login(supabase_url, supabase_anon_key)
+  })
     .await
     .map_err(|err| err.to_string())?
 }

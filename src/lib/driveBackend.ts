@@ -41,6 +41,11 @@ export interface DesktopAuthSession {
   };
 }
 
+export interface DesktopSupabaseConfig {
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+}
+
 export interface DriveNodeHandle {
   accountId: string;
   googleId: string;
@@ -132,9 +137,21 @@ export async function connectGoogleAccount(
 
 export async function setDesktopAppSession(
   accessToken: string,
+  supabaseConfig?: DesktopSupabaseConfig | TauriInvokeFn,
   invoke: TauriInvokeFn = tauriInvoke,
 ): Promise<DesktopAppSessionSummary> {
-  return invoke<DesktopAppSessionSummary>('set_app_session', { accessToken });
+  const actualInvoke = typeof supabaseConfig === 'function' ? supabaseConfig : invoke;
+  const actualConfig = typeof supabaseConfig === 'function' ? undefined : supabaseConfig;
+
+  const args: Record<string, unknown> = {
+    accessToken,
+  };
+  if (actualConfig) {
+    args.supabaseUrl = actualConfig.supabaseUrl;
+    args.supabaseAnonKey = actualConfig.supabaseAnonKey;
+  }
+
+  return actualInvoke<DesktopAppSessionSummary>('set_app_session', args);
 }
 
 export async function clearDesktopAppSession(
@@ -144,13 +161,17 @@ export async function clearDesktopAppSession(
 }
 
 export async function startDesktopGoogleAuth(
+  supabaseConfig: DesktopSupabaseConfig,
   invoke: TauriInvokeFn = tauriInvoke,
 ): Promise<DesktopAuthSession> {
   if (invoke === tauriInvoke && !hasTauriRuntime()) {
     throw new Error('Google sign-in is only available inside the desktop shell.');
   }
 
-  return invoke<DesktopAuthSession>('start_supabase_google_login');
+  return invoke<DesktopAuthSession>('start_supabase_google_login', {
+    supabaseUrl: supabaseConfig.supabaseUrl,
+    supabaseAnonKey: supabaseConfig.supabaseAnonKey,
+  });
 }
 
 export async function connectGooglePhotosAccount(

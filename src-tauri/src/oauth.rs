@@ -179,6 +179,7 @@ pub fn delete_stored_tokens(app: tauri::AppHandle, account_id: String) -> Result
 fn resolve_client_id(client_id: Option<String>) -> Result<String, OAuthError> {
   client_id
     .or_else(|| std::env::var("GOOGLE_CLIENT_ID").ok())
+    .or_else(|| option_env!("GOOGLE_CLIENT_ID").map(str::to_string))
     .filter(|value| !value.trim().is_empty())
     .ok_or(OAuthError::MissingClientId)
 }
@@ -186,6 +187,7 @@ fn resolve_client_id(client_id: Option<String>) -> Result<String, OAuthError> {
 fn resolve_client_secret() -> Option<String> {
   std::env::var("GOOGLE_CLIENT_SECRET")
     .ok()
+    .or_else(|| option_env!("GOOGLE_CLIENT_SECRET").map(str::to_string))
     .filter(|value| !value.trim().is_empty())
 }
 

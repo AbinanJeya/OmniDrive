@@ -458,6 +458,10 @@ export default function App() {
     () => readEnvValue('VITE_TURNSTILE_SITE_KEY', 'NEXT_PUBLIC_TURNSTILE_SITE_KEY'),
     [],
   );
+  const googleClientId = useMemo(
+    () => readEnvValue('VITE_GOOGLE_CLIENT_ID', 'NEXT_PUBLIC_GOOGLE_CLIENT_ID'),
+    [],
+  );
   const hasSupabaseConfig = Boolean(supabaseConfig.supabaseUrl && supabaseConfig.supabaseAnonKey);
   const [authSession, setAuthSession] = useState<StoredAuthSession | null>(null);
   const [authStatus, setAuthStatus] = useState<'loading' | 'locked' | 'ready'>('loading');
@@ -537,7 +541,7 @@ export default function App() {
             return;
           }
 
-          await setDesktopAppSession(redirectSession.accessToken);
+          await setDesktopAppSession(redirectSession.accessToken, supabaseConfig);
           if (!cancelled) {
             setAuthSession(redirectSession);
             setAuthStatus('ready');
@@ -567,7 +571,7 @@ export default function App() {
           return;
         }
 
-        await setDesktopAppSession(restoredSession.accessToken);
+        await setDesktopAppSession(restoredSession.accessToken, supabaseConfig);
         if (!cancelled) {
           setAuthSession(restoredSession);
           setAuthStatus('ready');
@@ -1145,7 +1149,7 @@ export default function App() {
         return;
       }
 
-      await setDesktopAppSession(session.accessToken);
+      await setDesktopAppSession(session.accessToken, supabaseConfig);
       resetWorkspaceState();
       setAuthSession(session);
       setAuthPendingEmail(email);
@@ -1296,7 +1300,7 @@ export default function App() {
       return;
     }
 
-    await setDesktopAppSession(session.accessToken);
+    await setDesktopAppSession(session.accessToken, supabaseConfig);
     resetWorkspaceState();
     setAuthSession(session);
     setAuthPendingEmail(session.user.email);
@@ -1316,7 +1320,7 @@ export default function App() {
 
     try {
       if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-        const desktopSession = await startDesktopGoogleAuth();
+        const desktopSession = await startDesktopGoogleAuth(supabaseConfig);
         await unlockWithSession(desktopSession);
         return;
       }
@@ -1417,7 +1421,7 @@ export default function App() {
     setNoticeMessage(null);
 
     try {
-      await connectGoogleAccount();
+      await connectGoogleAccount(googleClientId || undefined);
       await refreshDriveState();
       setNoticeMessage('Google Drive account connected.');
     } catch (error) {
@@ -1433,7 +1437,7 @@ export default function App() {
     setNoticeMessage(null);
 
     try {
-      await connectGooglePhotosAccount();
+      await connectGooglePhotosAccount(googleClientId || undefined);
       await refreshDriveState();
       setNoticeMessage('Google Photos connected.');
     } catch (error) {

@@ -53,6 +53,11 @@ jobs:
         uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_SUPABASE_URL: https://iznnxpvqhfbdsyqpbhtr.supabase.co
+          VITE_SUPABASE_ANON_KEY: sb_publishable_kuU3zQbLtOzhoF29-vEPtQ_lAFeR5oB
+          VITE_TURNSTILE_SITE_KEY: 0x4AAAAAADFczBFVTYn8AXLk
+          VITE_GOOGLE_CLIENT_ID: 786332327705-kf87glvn5hudo369s9hpqppirb0onm85.apps.googleusercontent.com
+          GOOGLE_CLIENT_ID: 786332327705-kf87glvn5hudo369s9hpqppirb0onm85.apps.googleusercontent.com
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:

@@ -32,16 +32,22 @@ struct SupabaseUserResponse {
 }
 
 #[derive(Debug)]
-struct SupabaseConfig {
-  url: String,
-  anon_key: String,
+pub struct SupabaseConfig {
+  pub url: String,
+  pub anon_key: String,
 }
 
 pub fn set_app_session(
   state: State<'_, AppSessionState>,
   access_token: String,
+  supabase_url: Option<String>,
+  supabase_anon_key: Option<String>,
 ) -> Result<AppSessionSummary, String> {
-  let user = verify_supabase_access_token(&access_token)?;
+  let config = match SupabaseConfig::from_optional_values(supabase_url, supabase_anon_key) {
+    Some(config) => config,
+    None => read_supabase_config()?,
+  };
+  let user = verify_supabase_access_token(&access_token, &config)?;
   let mut current_user = state
     .current_user
     .lock()
@@ -102,14 +108,16 @@ pub fn token_namespace_key(app_user_id: &str, account_id: &str) -> String {
   format!("omnidrive:{app_user_id}:{account_id}")
 }
 
-fn verify_supabase_access_token(access_token: &str) -> Result<AuthenticatedAppUser, String> {
-  let config = read_supabase_config()?;
+fn verify_supabase_access_token(
+  access_token: &str,
+  config: &SupabaseConfig,
+) -> Result<AuthenticatedAppUser, String> {
   let response = Client::builder()
     .timeout(std::time::Duration::from_secs(30))
     .build()
     .map_err(|err| format!("failed to create Supabase auth client: {err}"))?
     .get(format!("{}/auth/v1/user", config.url.trim_end_matches('/')))
-    .header("apikey", config.anon_key)
+    .header("apikey", &config.anon_key)
     .bearer_auth(access_token)
     .send()
     .and_then(|response| response.error_for_status())
@@ -147,6 +155,22 @@ fn read_supabase_config() -> Result<SupabaseConfig, String> {
   })?;
 
   Ok(SupabaseConfig { url, anon_key })
+}
+
+impl SupabaseConfig {
+  pub fn from_optional_values(
+    supabase_url: Option<String>,
+    supabase_anon_key: Option<String>,
+  ) -> Option<Self> {
+    let url = supabase_url
+      .map(|value| value.trim().to_string())
+      .filter(|value| !value.is_empty())?;
+    let anon_key = supabase_anon_key
+      .map(|value| value.trim().to_string())
+      .filter(|value| !value.is_empty())?;
+
+    Some(Self { url, anon_key })
+  }
 }
 
 fn env_value(keys: &[&str]) -> Option<String> {

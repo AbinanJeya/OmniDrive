@@ -93,6 +93,7 @@ Example:
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-publishable-or-anon-key
 VITE_TURNSTILE_SITE_KEY=your-cloudflare-turnstile-site-key
+VITE_GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_ID=your-client-id
 GOOGLE_CLIENT_SECRET=your-client-secret
 ```

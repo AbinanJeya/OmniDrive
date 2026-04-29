@@ -61,9 +61,12 @@ struct SupabaseOAuthSession {
   code_verifier: String,
 }
 
-pub fn run_google_login() -> Result<SupabaseAuthSessionPayload, String> {
-  let supabase_url = env_value("VITE_SUPABASE_URL")?;
-  let anon_key = env_value("VITE_SUPABASE_ANON_KEY")?;
+pub fn run_google_login(
+  supabase_url: String,
+  supabase_anon_key: String,
+) -> Result<SupabaseAuthSessionPayload, String> {
+  let supabase_url = non_empty_value("Supabase URL", supabase_url)?;
+  let anon_key = non_empty_value("Supabase anon key", supabase_anon_key)?;
   let listener =
     TcpListener::bind("127.0.0.1:0").map_err(|err| format!("failed to open auth callback listener: {err}"))?;
   let port = listener
@@ -245,11 +248,13 @@ fn html_page(title: &str, message: &str) -> String {
   )
 }
 
-fn env_value(key: &str) -> Result<String, String> {
-  std::env::var(key)
-    .ok()
-    .filter(|value| !value.trim().is_empty())
-    .ok_or_else(|| format!("missing {key}"))
+fn non_empty_value(label: &str, value: String) -> Result<String, String> {
+  let trimmed = value.trim().to_string();
+  if trimmed.is_empty() {
+    Err(format!("missing {label}"))
+  } else {
+    Ok(trimmed)
+  }
 }
 
 fn code_challenge(verifier: &str) -> String {

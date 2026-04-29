@@ -308,7 +308,10 @@ pub fn ensure_fresh_tokens(
   }
 
   let client_id = if tokens.client_id.trim().is_empty() {
-    std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default()
+    std::env::var("GOOGLE_CLIENT_ID")
+      .ok()
+      .or_else(|| option_env!("GOOGLE_CLIENT_ID").map(str::to_string))
+      .unwrap_or_default()
   } else {
     tokens.client_id.clone()
   };
@@ -320,6 +323,7 @@ pub fn ensure_fresh_tokens(
   let client = build_client()?;
   let client_secret = std::env::var("GOOGLE_CLIENT_SECRET")
     .ok()
+    .or_else(|| option_env!("GOOGLE_CLIENT_SECRET").map(str::to_string))
     .filter(|value| !value.trim().is_empty());
   let mut form_fields = vec![
     ("client_id", client_id.as_str()),
