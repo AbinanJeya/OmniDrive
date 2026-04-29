@@ -150,6 +150,23 @@ interface BrowsePreferences {
   filters: FilterModel;
 }
 
+function getTurnstileLoadErrorMessage(): string {
+  if (typeof window === 'undefined') {
+    return 'Security check could not load. Try again in a moment.';
+  }
+
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'Security check could not load on localhost. Add localhost and 127.0.0.1 to this Cloudflare Turnstile widget, then reload OmniDrive.';
+  }
+
+  if (hostname === 'tauri.localhost') {
+    return 'Security check could not load in the desktop app. Add tauri.localhost to this Cloudflare Turnstile widget, then reopen OmniDrive.';
+  }
+
+  return 'Security check could not load. Check this Cloudflare Turnstile widget allows the current app hostname.';
+}
+
 const VIEW_MODE_STORAGE_KEY = 'omnidrive:view-mode';
 const THEME_STORAGE_KEY = 'omnidrive:theme';
 const THEME_VARIANT_STORAGE_KEY = 'omnidrive:theme-variant';
@@ -2904,7 +2921,7 @@ function AuthShell({
         },
         'error-callback': () => {
           setCaptchaToken('');
-          setLocalErrorMessage('Security check could not load. Try again in a moment.');
+          setLocalErrorMessage(getTurnstileLoadErrorMessage());
         },
       });
     };
