@@ -1,6 +1,8 @@
--- Manual copy of supabase/migrations/20260430220000_linked_google_accounts.sql.
--- Use the migration file with the Supabase CLI when possible; paste this file
--- into the Supabase SQL editor if you are configuring the project manually.
+-- OmniDrive cloud-linked account registry.
+--
+-- This stores account identity metadata only. It does not store Google access
+-- tokens or refresh tokens. New devices can show previously linked accounts,
+-- then ask the user to reconnect Google locally before Drive data is available.
 
 create table if not exists public.linked_google_accounts (
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
