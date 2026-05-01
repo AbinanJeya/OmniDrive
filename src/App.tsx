@@ -15,6 +15,7 @@ import {
   File,
   FolderPlus,
   FolderOpen,
+  HardDrive,
   History,
   LayoutGrid,
   List,
@@ -207,6 +208,11 @@ interface RowContextMenuState {
   row: BrowseRow;
   x: number;
   y: number;
+}
+
+interface TransferDialogState {
+  rows: BrowseRow[];
+  source: 'details' | 'context' | 'toolbar';
 }
 
 type AuthScreenMode = 'signIn' | 'signUp' | 'forgotPassword' | 'verifyEmail';
@@ -547,6 +553,7 @@ export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<RowContextMenuState | null>(null);
+  const [transferDialog, setTransferDialog] = useState<TransferDialogState | null>(null);
   const [revisionPanel, setRevisionPanel] = useState<{
     node: UnifiedNode;
     revisions: DriveRevision[];
@@ -1173,6 +1180,7 @@ export default function App() {
     setErrorMessage(null);
     setNoticeMessage(null);
     setContextMenu(null);
+    setTransferDialog(null);
     setRevisionPanel(null);
     setIsCommandPaletteOpen(false);
     setIsSettingsOpen(false);
@@ -1716,7 +1724,7 @@ export default function App() {
     );
   }
 
-  async function handleTransferSelected(rows: BrowseRow[] = selectedRows) {
+  function transferRowsToDriveFiles(rows: BrowseRow[]): UnifiedNode[] | null {
     const selectedFiles = rows
       .filter(isFileBrowseRow)
       .map((row) => row.entry.node)
@@ -1725,46 +1733,55 @@ export default function App() {
         return account?.sourceKind === 'drive';
       });
     if (selectedFiles.length === 0) {
-      return;
+      return null;
     }
 
     if (selectedFiles.length !== rows.length) {
       setErrorMessage('Transfer only supports selected Google Drive files. Folders and Google Photos items are read-only for transfers.');
-      return;
+      return null;
     }
 
-    const targetAccounts = driveState.accounts.filter((account) => {
+    return selectedFiles;
+  }
+
+  function targetAccountsForTransfer(selectedFiles: UnifiedNode[]): AccountState[] {
+    return driveState.accounts.filter((account) => {
       if (account.sourceKind !== 'drive' || !account.isConnected) {
         return false;
       }
 
       return selectedFiles.some((file) => file.accountId !== account.accountId);
     });
+  }
+
+  function openTransferDialog(rows: BrowseRow[] = selectedRows, source: TransferDialogState['source'] = 'toolbar') {
+    setErrorMessage(null);
+    const selectedFiles = transferRowsToDriveFiles(rows);
+    if (!selectedFiles) {
+      return;
+    }
+
+    const targetAccounts = targetAccountsForTransfer(selectedFiles);
     if (targetAccounts.length === 0) {
       setErrorMessage('Connect another Google Drive account before transferring files.');
       return;
     }
 
-    const targetPrompt = targetAccounts
-      .map((account) => `${account.label}: ${account.displayName}`)
-      .join('\n');
-    const targetLabel = window.prompt(`Transfer to which drive?\n${targetPrompt}`, targetAccounts[0]?.label ?? '');
-    if (!targetLabel) {
+    setTransferDialog({ rows, source });
+  }
+
+  async function handleTransferRowsToAccount(rows: BrowseRow[], targetAccount: AccountState) {
+    const selectedFiles = transferRowsToDriveFiles(rows);
+    if (!selectedFiles) {
       return;
     }
 
-    const normalizedTarget = targetLabel.trim().toLowerCase();
-    const targetAccount = targetAccounts.find(
-      (account) =>
-        account.label.toLowerCase() === normalizedTarget ||
-        account.displayName.toLowerCase() === normalizedTarget ||
-        account.email?.toLowerCase() === normalizedTarget,
-    );
-    if (!targetAccount) {
-      setErrorMessage('That target drive was not found. Use the drive label shown in the prompt.');
+    if (!targetAccountsForTransfer(selectedFiles).some((account) => account.accountId === targetAccount.accountId)) {
+      setErrorMessage('That target drive is not available for this transfer.');
       return;
     }
 
+    setTransferDialog(null);
     await runMutation(
       () =>
         transferDriveNodes(
@@ -2622,6 +2639,11 @@ export default function App() {
               x={contextMenu.x}
               y={contextMenu.y}
               account={accountForRow(contextMenu.row)}
+              transferTargets={
+                isFileBrowseRow(contextMenu.row)
+                  ? targetAccountsForTransfer([contextMenu.row.entry.node])
+                  : []
+              }
               onClose={() => setContextMenu(null)}
               onOpen={() => {
                 setContextMenu(null);
@@ -2657,7 +2679,15 @@ export default function App() {
                   setSelectedRowIds([contextMenu.row.id]);
                   setIsSelectMode(false);
                 });
-                void handleTransferSelected([contextMenu.row]);
+                openTransferDialog([contextMenu.row], 'context');
+              }}
+              onTransferTo={(targetAccount) => {
+                setContextMenu(null);
+                startTransition(() => {
+                  setSelectedRowIds([contextMenu.row.id]);
+                  setIsSelectMode(false);
+                });
+                void handleTransferRowsToAccount([contextMenu.row], targetAccount);
               }}
               onShowRevisions={() => {
                 setContextMenu(null);
@@ -2666,6 +2696,24 @@ export default function App() {
               onCopyPath={() => {
                 setContextMenu(null);
                 void handleCopyRowPath(contextMenu.row);
+              }}
+            />
+          ) : null}
+
+          {transferDialog ? (
+            <TransferDialog
+              rows={transferDialog.rows.length > 0 ? transferDialog.rows : selectedRows}
+              targetAccounts={
+                targetAccountsForTransfer(
+                  transferRowsToDriveFiles(transferDialog.rows.length > 0 ? transferDialog.rows : selectedRows) ?? [],
+                )
+              }
+              onClose={() => setTransferDialog(null)}
+              onTransfer={(targetAccount) => {
+                void handleTransferRowsToAccount(
+                  transferDialog.rows.length > 0 ? transferDialog.rows : selectedRows,
+                  targetAccount,
+                );
               }}
             />
           ) : null}
@@ -2786,7 +2834,9 @@ export default function App() {
                     void handleDownloadSelected();
                   }}
                   onTransfer={() => {
-                    void handleTransferSelected();
+                    if (selectedRow) {
+                      openTransferDialog([selectedRow], 'details');
+                    }
                   }}
                   canPreview={Boolean(selectedPreviewable)}
                   canRenameSelected={canRenameSelected}
@@ -2873,7 +2923,7 @@ export default function App() {
                     void handleShareSelected();
                   }}
                   onTransfer={() => {
-                    void handleTransferSelected();
+                    openTransferDialog();
                   }}
                   onDelete={() => {
                     void handleDeleteSelection();
@@ -3689,6 +3739,77 @@ function SelectionDetailsPanel({
   );
 }
 
+function TransferDialog({
+  rows,
+  targetAccounts,
+  onClose,
+  onTransfer,
+}: {
+  rows: BrowseRow[];
+  targetAccounts: AccountState[];
+  onClose: () => void;
+  onTransfer: (targetAccount: AccountState) => void;
+}) {
+  const fileCount = rows.filter(isFileBrowseRow).length;
+  const title = fileCount === 1 ? rows.find(isFileBrowseRow)?.name ?? 'Selected file' : `${fileCount} files`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/62 px-4 backdrop-blur-sm">
+      <section className="glass-panel w-full max-w-[440px] overflow-hidden rounded-[26px] border border-cyan-100/10 bg-[#071527]/96 shadow-[0_30px_90px_rgba(0,0,0,0.44)]">
+        <div className="flex items-center justify-between border-b border-cyan-100/[0.07] px-5 py-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200">
+              Transfer
+            </p>
+            <h2 className="mt-1 truncate font-display text-lg font-semibold text-slate-100">
+              {title}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="glass-icon-button"
+            aria-label="Close transfer dialog"
+            title="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-2 p-3">
+          {targetAccounts.length > 0 ? (
+            targetAccounts.map((account) => (
+              <button
+                key={account.accountId}
+                type="button"
+                onClick={() => onTransfer(account)}
+                className="group flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-white/[0.055]"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-300/15">
+                  <HardDrive className="h-5 w-5" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-slate-100 group-hover:text-cyan-100">
+                    Drive {account.label} · {account.displayName}
+                  </span>
+                  <span className="mt-1 block truncate text-xs text-slate-500">
+                    {account.email ?? 'Google Drive account'}
+                  </span>
+                </span>
+                <ArrowRightLeft className="h-4 w-4 text-slate-500 group-hover:text-cyan-200" />
+              </button>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-cyan-100/10 bg-white/[0.035] px-4 py-5 text-sm leading-6 text-slate-400">
+              Connect another Google Drive account before transferring files.
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function PracticalityStrip({
   disabled,
   jobs,
@@ -4429,6 +4550,7 @@ function RowContextMenu({
   x,
   y,
   account,
+  transferTargets,
   onClose,
   onOpen,
   onUploadInto,
@@ -4438,6 +4560,7 @@ function RowContextMenu({
   onDownload,
   onShare,
   onTransfer,
+  onTransferTo,
   onShowRevisions,
   onCopyPath,
 }: {
@@ -4446,6 +4569,7 @@ function RowContextMenu({
   x: number;
   y: number;
   account: AccountState | null;
+  transferTargets: AccountState[];
   onClose: () => void;
   onOpen: () => void;
   onUploadInto: () => void;
@@ -4455,6 +4579,7 @@ function RowContextMenu({
   onDownload: () => void;
   onShare: () => void;
   onTransfer: () => void;
+  onTransferTo: (targetAccount: AccountState) => void;
   onShowRevisions: () => void;
   onCopyPath: () => void;
 }) {
@@ -4486,7 +4611,23 @@ function RowContextMenu({
               {isDriveFile ? (
                 <>
                   <ContextMenuButton icon={<Share2 className="h-4 w-4" />} label="Share" onClick={onShare} />
-                  <ContextMenuButton icon={<ArrowRightLeft className="h-4 w-4" />} label="Transfer" onClick={onTransfer} />
+                  <ContextMenuFlyout
+                    icon={<ArrowRightLeft className="h-4 w-4" />}
+                    label="Transfer"
+                    disabled={transferTargets.length === 0}
+                    fallbackLabel="Choose drive..."
+                    onFallback={onTransfer}
+                  >
+                    {transferTargets.map((targetAccount) => (
+                      <ContextMenuButton
+                        key={targetAccount.accountId}
+                        icon={<HardDrive className="h-4 w-4" />}
+                        label={`${targetAccount.label} ${targetAccount.displayName}`}
+                        description={targetAccount.email}
+                        onClick={() => onTransferTo(targetAccount)}
+                      />
+                    ))}
+                  </ContextMenuFlyout>
                   <ContextMenuButton icon={<History className="h-4 w-4" />} label="Manage versions" onClick={onShowRevisions} />
                 </>
               ) : null}
@@ -4525,11 +4666,13 @@ function ContextMenuDivider() {
 function ContextMenuButton({
   icon,
   label,
+  description,
   onClick,
   danger = false,
 }: {
   icon: ReactNode;
   label: string;
+  description?: string;
   onClick: () => void;
   danger?: boolean;
 }) {
@@ -4547,8 +4690,76 @@ function ContextMenuButton({
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.045] text-slate-300">
         {icon}
       </span>
-      <span>{label}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{label}</span>
+        {description ? (
+          <span className="mt-0.5 block truncate text-[11px] font-medium text-slate-500">{description}</span>
+        ) : null}
+      </span>
     </button>
+  );
+}
+
+function ContextMenuFlyout({
+  icon,
+  label,
+  children,
+  disabled = false,
+  fallbackLabel,
+  onFallback,
+}: {
+  icon: ReactNode;
+  label: string;
+  children: ReactNode;
+  disabled?: boolean;
+  fallbackLabel: string;
+  onFallback: () => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div
+      className="group/flyout relative"
+      onMouseEnter={() => setIsOpen(true)}
+      onMouseLeave={() => setIsOpen(false)}
+    >
+      <button
+        type="button"
+        onClick={disabled ? onFallback : () => setIsOpen((current) => !current)}
+        className={[
+          'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-200 transition',
+          disabled ? 'opacity-70 hover:bg-white/[0.05]' : 'hover:bg-white/[0.05] hover:text-cyan-100',
+        ].join(' ')}
+      >
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/[0.045] text-slate-300">
+          {icon}
+        </span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <ChevronRight className="h-4 w-4 text-slate-500" />
+      </button>
+
+      {isOpen && !disabled ? (
+        <div className="glass-panel absolute left-[calc(100%+0.45rem)] top-0 z-10 w-[260px] rounded-2xl border border-cyan-100/10 bg-[#071527]/96 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.32)]">
+          <div className="border-b border-cyan-100/[0.06] px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200">
+              Send to drive
+            </p>
+          </div>
+          <div className="py-1">{children}</div>
+        </div>
+      ) : null}
+
+      {isOpen && disabled ? (
+        <div className="glass-panel absolute left-[calc(100%+0.45rem)] top-0 z-10 w-[230px] rounded-2xl border border-cyan-100/10 bg-[#071527]/96 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.32)]">
+          <ContextMenuButton
+            icon={<ArrowRightLeft className="h-4 w-4" />}
+            label={fallbackLabel}
+            description="No target drive available"
+            onClick={onFallback}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
