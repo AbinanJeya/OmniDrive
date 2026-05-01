@@ -7,6 +7,7 @@ import {
   type VirtualDirectoryEntry,
   type VirtualExplorerEntry,
 } from '../domain/explorerTree';
+import { computeStorageSummary } from '../domain/driveView';
 import type { AccountState } from '../domain/types';
 
 interface FileExplorerProps {
@@ -82,9 +83,10 @@ export function FileExplorer({
     () => new Map(accounts.map((account) => [account.accountId, account])),
     [accounts],
   );
-  const totalUsedBytes = connectedAccounts.reduce((sum, account) => sum + account.usedBytes, 0);
-  const totalCapacityBytes = connectedAccounts.reduce((sum, account) => sum + account.totalBytes, 0);
-  const usagePercent = totalCapacityBytes > 0 ? Math.min(100, (totalUsedBytes / totalCapacityBytes) * 100) : 0;
+  const storageSummary = computeStorageSummary(connectedAccounts, { kind: 'all' });
+  const totalUsedBytes = storageSummary.usedBytes;
+  const totalCapacityBytes = storageSummary.totalBytes;
+  const usagePercent = storageSummary.usagePercent;
 
   function toggleFolder(path: string) {
     setExpandedPaths((current) => {
