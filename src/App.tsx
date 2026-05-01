@@ -67,6 +67,7 @@ import {
   planDriveTransferItems,
   type PlannedTransferItem,
 } from './domain/transferModel';
+import { dragPreviewTransform } from './domain/dragPresentation';
 import type {
   AccountState,
   AppSettings,
@@ -609,6 +610,9 @@ export default function App() {
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const pendingTransferDragRef = useRef<PendingTransferDragState | null>(null);
   const dragTransferRef = useRef<DragTransferState | null>(null);
+  const dragPreviewRef = useRef<HTMLDivElement>(null);
+  const dragPreviewFrameRef = useRef<number | null>(null);
+  const dragPreviewPointRef = useRef<{ x: number; y: number } | null>(null);
   const suppressNextBrowseClickRef = useRef(false);
   const isWorkspaceUnlocked = authStatus === 'ready' && Boolean(authSession);
 
@@ -709,6 +713,24 @@ export default function App() {
   useEffect(() => {
     const dragThresholdPx = 6;
 
+    const scheduleDragPreviewPosition = (x: number, y: number) => {
+      dragPreviewPointRef.current = { x, y };
+      if (dragPreviewFrameRef.current !== null) {
+        return;
+      }
+
+      dragPreviewFrameRef.current = window.requestAnimationFrame(() => {
+        dragPreviewFrameRef.current = null;
+        const point = dragPreviewPointRef.current;
+        const previewElement = dragPreviewRef.current;
+        if (!point || !previewElement) {
+          return;
+        }
+
+        previewElement.style.transform = dragPreviewTransform(point.x, point.y);
+      });
+    };
+
     const handlePointerMove = (event: PointerEvent) => {
       const pendingDrag = pendingTransferDragRef.current;
       if (!pendingDrag) {
@@ -723,20 +745,24 @@ export default function App() {
       }
 
       event.preventDefault();
+      scheduleDragPreviewPosition(event.clientX, event.clientY);
       const hoveredAccountId = findDriveDropAccountIdAtPoint(event.clientX, event.clientY);
       const overAccountId =
         hoveredAccountId && pendingDrag.targetAccountIds.includes(hoveredAccountId)
           ? hoveredAccountId
           : null;
+      const currentDrag = dragTransferRef.current;
       const nextDrag: DragTransferState = {
-        rows: pendingDrag.rows,
+        rows: currentDrag?.rows ?? pendingDrag.rows,
         x: event.clientX,
         y: event.clientY,
-        targetAccountIds: pendingDrag.targetAccountIds,
+        targetAccountIds: currentDrag?.targetAccountIds ?? pendingDrag.targetAccountIds,
         overAccountId,
       };
       dragTransferRef.current = nextDrag;
-      setDragTransfer(nextDrag);
+      if (!currentDrag || currentDrag.overAccountId !== overAccountId) {
+        setDragTransfer(nextDrag);
+      }
     };
 
     const finishPointerDrag = (event: PointerEvent) => {
@@ -760,6 +786,11 @@ export default function App() {
 
       dragTransferRef.current = null;
       setDragTransfer(null);
+      if (dragPreviewFrameRef.current !== null) {
+        window.cancelAnimationFrame(dragPreviewFrameRef.current);
+        dragPreviewFrameRef.current = null;
+      }
+      dragPreviewPointRef.current = null;
 
       if (!targetAccount) {
         return;
@@ -780,6 +811,10 @@ export default function App() {
       document.removeEventListener('pointermove', handlePointerMove);
       document.removeEventListener('pointerup', finishPointerDrag);
       document.removeEventListener('pointercancel', finishPointerDrag);
+      if (dragPreviewFrameRef.current !== null) {
+        window.cancelAnimationFrame(dragPreviewFrameRef.current);
+        dragPreviewFrameRef.current = null;
+      }
     };
   }, [driveState.accounts, driveState.nodes, route.folderPath]);
 
@@ -2880,6 +2915,7 @@ export default function App() {
 
           {dragTransfer ? (
             <DragTransferPreview
+              previewRef={dragPreviewRef}
               rows={dragTransfer.rows}
               x={dragTransfer.x}
               y={dragTransfer.y}
@@ -3988,11 +4024,13 @@ function TransferDialog({
 }
 
 function DragTransferPreview({
+  previewRef,
   rows,
   x,
   y,
   hasTargets,
 }: {
+  previewRef: RefObject<HTMLDivElement>;
   rows: BrowseRow[];
   x: number;
   y: number;
@@ -4003,10 +4041,13 @@ function DragTransferPreview({
 
   return (
     <div
+      ref={previewRef}
       className="pointer-events-none fixed z-[70]"
       style={{
-        left: x + 16,
-        top: y + 16,
+        left: 0,
+        top: 0,
+        transform: dragPreviewTransform(x, y),
+        willChange: 'transform',
       }}
     >
       <div className="relative">
