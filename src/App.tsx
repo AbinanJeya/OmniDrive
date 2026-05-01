@@ -1716,8 +1716,8 @@ export default function App() {
     );
   }
 
-  async function handleTransferSelected() {
-    const selectedFiles = selectedRows
+  async function handleTransferSelected(rows: BrowseRow[] = selectedRows) {
+    const selectedFiles = rows
       .filter(isFileBrowseRow)
       .map((row) => row.entry.node)
       .filter((node) => {
@@ -1728,7 +1728,7 @@ export default function App() {
       return;
     }
 
-    if (selectedFiles.length !== selectedRows.length) {
+    if (selectedFiles.length !== rows.length) {
       setErrorMessage('Transfer only supports selected Google Drive files. Folders and Google Photos items are read-only for transfers.');
       return;
     }
@@ -2651,6 +2651,14 @@ export default function App() {
                 setContextMenu(null);
                 void handleShareRow(contextMenu.row);
               }}
+              onTransfer={() => {
+                setContextMenu(null);
+                startTransition(() => {
+                  setSelectedRowIds([contextMenu.row.id]);
+                  setIsSelectMode(false);
+                });
+                void handleTransferSelected([contextMenu.row]);
+              }}
               onShowRevisions={() => {
                 setContextMenu(null);
                 void handleShowRowRevisions(contextMenu.row);
@@ -2864,11 +2872,15 @@ export default function App() {
                   onShare={() => {
                     void handleShareSelected();
                   }}
+                  onTransfer={() => {
+                    void handleTransferSelected();
+                  }}
                   onDelete={() => {
                     void handleDeleteSelection();
                   }}
                   canDownload
                   canShare={canShareSelected}
+                  canTransfer={canTransferSelected}
                   disabled={actionDisabled}
                 />
               ) : null}
@@ -3559,16 +3571,20 @@ function SelectionDetailsPanel({
   disabled,
   canDownload,
   canShare,
+  canTransfer,
   onDownload,
   onShare,
+  onTransfer,
   onDelete,
 }: {
   selectedRow: BrowseRow | null;
   disabled: boolean;
   canDownload: boolean;
   canShare: boolean;
+  canTransfer: boolean;
   onDownload: () => void;
   onShare: () => void;
+  onTransfer: () => void;
   onDelete: () => void;
 }) {
   const title = selectedRow?.name ?? 'File Details';
@@ -3648,6 +3664,12 @@ function SelectionDetailsPanel({
           icon={<Share2 className="h-4 w-4" />}
           label="Share File"
           onClick={onShare}
+        />
+        <DetailAction
+          disabled={disabled || !canTransfer}
+          icon={<ArrowRightLeft className="h-4 w-4" />}
+          label="Transfer"
+          onClick={onTransfer}
         />
         <DetailAction
           disabled={disabled}
@@ -4415,6 +4437,7 @@ function RowContextMenu({
   onDelete,
   onDownload,
   onShare,
+  onTransfer,
   onShowRevisions,
   onCopyPath,
 }: {
@@ -4431,6 +4454,7 @@ function RowContextMenu({
   onDelete: () => void;
   onDownload: () => void;
   onShare: () => void;
+  onTransfer: () => void;
   onShowRevisions: () => void;
   onCopyPath: () => void;
 }) {
@@ -4462,6 +4486,7 @@ function RowContextMenu({
               {isDriveFile ? (
                 <>
                   <ContextMenuButton icon={<Share2 className="h-4 w-4" />} label="Share" onClick={onShare} />
+                  <ContextMenuButton icon={<ArrowRightLeft className="h-4 w-4" />} label="Transfer" onClick={onTransfer} />
                   <ContextMenuButton icon={<History className="h-4 w-4" />} label="Manage versions" onClick={onShowRevisions} />
                 </>
               ) : null}
