@@ -10,7 +10,7 @@ import {
   Plus,
   Search,
 } from 'lucide-react';
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentType, DragEvent, ReactNode } from 'react';
 import { computeStorageSummary } from '../domain/driveView';
 import type { AccountState, BrowseCategory, BrowseScope, FileCategory } from '../domain/types';
 
@@ -25,6 +25,14 @@ interface DriveSidebarProps {
   onConnectAccount: () => void;
   onConnectPhotosAccount: () => void;
   onDisconnectAccount: (accountId: string, label: string) => void;
+  dragTransfer?: {
+    rowCount: number;
+    targetAccountIds: string[];
+    overAccountId?: string | null;
+  } | null;
+  onDriveDragOver?: (accountId: string, event: DragEvent<HTMLDivElement>) => void;
+  onDriveDragLeave?: (accountId: string) => void;
+  onDriveDrop?: (accountId: string, event: DragEvent<HTMLDivElement>) => void;
 }
 
 const CATEGORY_ITEMS: Array<{
@@ -82,6 +90,10 @@ export function DriveSidebar({
   onConnectAccount,
   onConnectPhotosAccount,
   onDisconnectAccount,
+  dragTransfer,
+  onDriveDragOver,
+  onDriveDragLeave,
+  onDriveDrop,
 }: DriveSidebarProps) {
   const storageSummary = computeStorageSummary(accounts, { kind: 'all' });
   const totalBytes = storageSummary.totalBytes;
@@ -124,10 +136,25 @@ export function DriveSidebar({
         </SidebarGroup>
 
         <SidebarGroup title="Storage Locations">
-          {accounts.map((account) => (
+          {accounts.map((account) => {
+            const isDragTarget = Boolean(
+              dragTransfer?.targetAccountIds.includes(account.accountId),
+            );
+            const isDragUnavailable = Boolean(dragTransfer) && !isDragTarget;
+            const isDragOver = dragTransfer?.overAccountId === account.accountId;
+
+            return (
             <div
               key={account.accountId}
-              className="rounded-xl transition hover:bg-white/[0.035]"
+              onDragOver={(event) => onDriveDragOver?.(account.accountId, event)}
+              onDragLeave={() => onDriveDragLeave?.(account.accountId)}
+              onDrop={(event) => onDriveDrop?.(account.accountId, event)}
+              className={[
+                'rounded-2xl transition',
+                isDragTarget ? 'bg-cyan-400/[0.06] ring-1 ring-cyan-300/15' : 'hover:bg-white/[0.035]',
+                isDragOver ? 'bg-cyan-300/15 ring-2 ring-cyan-200/45 shadow-[0_0_26px_rgba(0,240,255,0.16)]' : '',
+                isDragUnavailable ? 'opacity-25 grayscale' : '',
+              ].join(' ')}
             >
               <SidebarButton
                 active={activeScope.kind === 'account' && activeScope.accountId === account.accountId}
@@ -149,7 +176,8 @@ export function DriveSidebar({
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </SidebarGroup>
 
         <SidebarGroup title="More Types">

@@ -1,5 +1,5 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode, RefObject } from 'react';
+import type { DragEvent, ReactNode, RefObject } from 'react';
 import {
   ArrowRightLeft,
   ArrowDown,
@@ -62,6 +62,11 @@ import {
 } from './domain/browseModel';
 import { planGridThumbnailBatch, planThumbnailRowsForView } from './domain/gridThumbnails';
 import { computeStorageSummary } from './domain/driveView';
+import {
+  computeTransferTargetAccounts,
+  planDriveTransferItems,
+  type PlannedTransferItem,
+} from './domain/transferModel';
 import type {
   AccountState,
   AppSettings,
@@ -213,6 +218,14 @@ interface RowContextMenuState {
 interface TransferDialogState {
   rows: BrowseRow[];
   source: 'details' | 'context' | 'toolbar';
+}
+
+interface DragTransferState {
+  rows: BrowseRow[];
+  x: number;
+  y: number;
+  targetAccountIds: string[];
+  overAccountId?: string | null;
 }
 
 type AuthScreenMode = 'signIn' | 'signUp' | 'forgotPassword' | 'verifyEmail';
@@ -448,6 +461,21 @@ function nodeToHandle(node: UnifiedNode): DriveNodeHandle {
   };
 }
 
+function groupPlannedTransferItems(items: PlannedTransferItem[]): Array<{
+  targetVirtualPath: string;
+  items: PlannedTransferItem[];
+}> {
+  const groups = new Map<string, PlannedTransferItem[]>();
+  for (const item of items) {
+    groups.set(item.targetVirtualPath, [...(groups.get(item.targetVirtualPath) ?? []), item]);
+  }
+
+  return [...groups.entries()].map(([targetVirtualPath, groupItems]) => ({
+    targetVirtualPath,
+    items: groupItems,
+  }));
+}
+
 function parentFolderPath(virtualPath: string): string {
   if (virtualPath === '/' || !virtualPath.startsWith('/')) {
     return '/';
@@ -554,6 +582,7 @@ export default function App() {
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<RowContextMenuState | null>(null);
   const [transferDialog, setTransferDialog] = useState<TransferDialogState | null>(null);
+  const [dragTransfer, setDragTransfer] = useState<DragTransferState | null>(null);
   const [revisionPanel, setRevisionPanel] = useState<{
     node: UnifiedNode;
     revisions: DriveRevision[];
@@ -1181,6 +1210,7 @@ export default function App() {
     setNoticeMessage(null);
     setContextMenu(null);
     setTransferDialog(null);
+    setDragTransfer(null);
     setRevisionPanel(null);
     setIsCommandPaletteOpen(false);
     setIsSettingsOpen(false);
@@ -1724,26 +1754,6 @@ export default function App() {
     );
   }
 
-  function transferRowsToDriveFiles(rows: BrowseRow[]): UnifiedNode[] | null {
-    const selectedFiles = rows
-      .filter(isFileBrowseRow)
-      .map((row) => row.entry.node)
-      .filter((node) => {
-        const account = driveState.accounts.find((item) => item.accountId === node.accountId);
-        return account?.sourceKind === 'drive';
-      });
-    if (selectedFiles.length === 0) {
-      return null;
-    }
-
-    if (selectedFiles.length !== rows.length) {
-      setErrorMessage('Transfer only supports selected Google Drive files. Folders and Google Photos items are read-only for transfers.');
-      return null;
-    }
-
-    return selectedFiles;
-  }
-
   function targetAccountsForTransfer(selectedFiles: UnifiedNode[]): AccountState[] {
     return driveState.accounts.filter((account) => {
       if (account.sourceKind !== 'drive' || !account.isConnected) {
@@ -1754,16 +1764,26 @@ export default function App() {
     });
   }
 
+  function targetAccountsForTransferRows(rows: BrowseRow[]): AccountState[] {
+    return computeTransferTargetAccounts({
+      rows,
+      nodes: driveState.nodes,
+      accounts: driveState.accounts,
+    });
+  }
+
   function openTransferDialog(rows: BrowseRow[] = selectedRows, source: TransferDialogState['source'] = 'toolbar') {
     setErrorMessage(null);
-    const selectedFiles = transferRowsToDriveFiles(rows);
-    if (!selectedFiles) {
-      return;
-    }
-
-    const targetAccounts = targetAccountsForTransfer(selectedFiles);
+    const targetAccounts = targetAccountsForTransferRows(rows);
     if (targetAccounts.length === 0) {
-      setErrorMessage('Connect another Google Drive account before transferring files.');
+      const plan = planDriveTransferItems({
+        rows,
+        nodes: driveState.nodes,
+        accounts: driveState.accounts,
+        targetAccountId: '',
+        baseTargetVirtualPath: route.folderPath,
+      });
+      setErrorMessage(plan.message ?? 'Connect another Google Drive account before transferring files.');
       return;
     }
 
@@ -1771,34 +1791,45 @@ export default function App() {
   }
 
   async function handleTransferRowsToAccount(rows: BrowseRow[], targetAccount: AccountState) {
-    const selectedFiles = transferRowsToDriveFiles(rows);
-    if (!selectedFiles) {
+    const plan = planDriveTransferItems({
+      rows,
+      nodes: driveState.nodes,
+      accounts: driveState.accounts,
+      targetAccountId: targetAccount.accountId,
+      baseTargetVirtualPath: route.folderPath,
+    });
+    if (plan.status !== 'ready') {
+      setErrorMessage(plan.message ?? 'Choose Google Drive files or folders from another connected account.');
       return;
     }
 
-    if (!targetAccountsForTransfer(selectedFiles).some((account) => account.accountId === targetAccount.accountId)) {
+    if (!targetAccountsForTransferRows(rows).some((account) => account.accountId === targetAccount.accountId)) {
       setErrorMessage('That target drive is not available for this transfer.');
       return;
     }
 
     setTransferDialog(null);
+    setDragTransfer(null);
     await runMutation(
-      () =>
-        transferDriveNodes(
-          selectedFiles.map((file) => nodeToHandle(file)),
-          targetAccount.accountId,
-          route.folderPath,
-        ),
-      `Transferred files to Drive ${targetAccount.label}.`,
+      async () => {
+        const groups = groupPlannedTransferItems(plan.items);
+        let transferredCount = 0;
+        for (const group of groups) {
+          transferredCount += await transferDriveNodes(
+            group.items.map((item) => nodeToHandle(item.node)),
+            targetAccount.accountId,
+            group.targetVirtualPath,
+          );
+        }
+        return transferredCount;
+      },
+      `Transferred ${plan.items.length === 1 ? 'item' : `${plan.items.length} items`} to Drive ${targetAccount.label}.`,
       {
         clearSelection: true,
         job: {
           kind: 'transfer',
-          label:
-            selectedFiles.length === 1
-              ? `Transfer ${selectedFiles[0]?.filename ?? 'file'}`
-              : `Transfer ${selectedFiles.length} files`,
-          sourceAccountId: selectedFiles[0]?.accountId,
+          label: plan.summaryLabel,
+          sourceAccountId: plan.items[0]?.node.accountId,
           targetAccountId: targetAccount.accountId,
         },
       },
@@ -2282,10 +2313,11 @@ export default function App() {
     position: { x: number; y: number },
   ) {
     const menuWidth = 240;
+    const flyoutWidth = 280;
     const viewportPadding = 12;
     const nextX = Math.min(
       Math.max(viewportPadding, position.x),
-      window.innerWidth - menuWidth - viewportPadding,
+      Math.max(viewportPadding, window.innerWidth - menuWidth - flyoutWidth - viewportPadding),
     );
     const nextY = Math.max(viewportPadding, position.y);
 
@@ -2296,6 +2328,101 @@ export default function App() {
       x: nextX,
       y: nextY,
     });
+  }
+
+  function rowsForDrag(row: BrowseRow): BrowseRow[] {
+    if (selectedRowIds.includes(row.id) && selectedRows.length > 0) {
+      return selectedRows;
+    }
+
+    return [row];
+  }
+
+  function handleBrowseRowDragStart(row: BrowseRow, event: DragEvent<HTMLElement>) {
+    const rows = rowsForDrag(row);
+    const targetAccounts = targetAccountsForTransferRows(rows);
+    event.dataTransfer.effectAllowed = targetAccounts.length > 0 ? 'copy' : 'none';
+    event.dataTransfer.setData('application/x-omnidrive-rows', rows.map((item) => item.id).join(','));
+    event.dataTransfer.setData('text/plain', rows.length === 1 ? rows[0]?.name ?? '' : `${rows.length} selected items`);
+
+    setContextMenu(null);
+    setDragTransfer({
+      rows,
+      x: event.clientX,
+      y: event.clientY,
+      targetAccountIds: targetAccounts.map((account) => account.accountId),
+      overAccountId: null,
+    });
+  }
+
+  function handleBrowseRowDrag(event: DragEvent<HTMLElement>) {
+    if (event.clientX === 0 && event.clientY === 0) {
+      return;
+    }
+
+    setDragTransfer((current) =>
+      current
+        ? {
+            ...current,
+            x: event.clientX,
+            y: event.clientY,
+          }
+        : current,
+    );
+  }
+
+  function handleBrowseRowDragEnd() {
+    setDragTransfer(null);
+  }
+
+  function handleDriveDragOver(accountId: string, event: DragEvent<HTMLDivElement>) {
+    if (!dragTransfer?.targetAccountIds.includes(accountId)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setDragTransfer((current) =>
+      current
+        ? {
+            ...current,
+            x: event.clientX,
+            y: event.clientY,
+            overAccountId: accountId,
+          }
+        : current,
+    );
+  }
+
+  function handleDriveDragLeave(accountId: string) {
+    setDragTransfer((current) =>
+      current?.overAccountId === accountId
+        ? {
+            ...current,
+            overAccountId: null,
+          }
+        : current,
+    );
+  }
+
+  function handleDriveDrop(accountId: string, event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const currentDrag = dragTransfer;
+    setDragTransfer(null);
+    if (!currentDrag?.targetAccountIds.includes(accountId)) {
+      return;
+    }
+
+    const targetAccount = driveState.accounts.find((account) => account.accountId === accountId);
+    if (!targetAccount) {
+      return;
+    }
+
+    startTransition(() => {
+      setSelectedRowIds(currentDrag.rows.map((row) => row.id));
+      setIsSelectMode(currentDrag.rows.length > 1);
+    });
+    void handleTransferRowsToAccount(currentDrag.rows, targetAccount);
   }
 
   function enterSelectMode() {
@@ -2310,13 +2437,6 @@ export default function App() {
 
   const selectedFile =
     selectedRow?.entry.kind === 'file' ? selectedRow.entry.node : null;
-  const selectedDriveFiles = selectedRows
-    .filter(isFileBrowseRow)
-    .map((row) => row.entry.node)
-    .filter((node) => {
-      const account = driveState.accounts.find((item) => item.accountId === node.accountId);
-      return account?.sourceKind === 'drive';
-    });
   const selectedPreviewable = Boolean(selectedFile?.isPreviewable);
   const selectedAccount = selectedFile
     ? driveState.accounts.find((account) => account.accountId === selectedFile.accountId) ?? null
@@ -2330,7 +2450,7 @@ export default function App() {
     );
   const canDeleteSelected = selectedRows.length > 0 && selectedRows.every(isRowDeletable);
   const canTransferSelected =
-    selectedRows.length > 0 && selectedDriveFiles.length === selectedRows.length;
+    selectedRows.length > 0 && targetAccountsForTransferRows(selectedRows).length > 0;
   const canShareSelected = Boolean(selectedFile && selectedAccount?.sourceKind === 'drive');
   const canShowRevisions = canShareSelected;
   const actionDisabled = driveState.requiresDesktopShell || isLoading || isMutating;
@@ -2418,6 +2538,18 @@ export default function App() {
           onDisconnectAccount={(accountId, label) => {
             void handleDisconnectAccount(accountId, label);
           }}
+          dragTransfer={
+            dragTransfer
+              ? {
+                  rowCount: dragTransfer.rows.length,
+                  targetAccountIds: dragTransfer.targetAccountIds,
+                  overAccountId: dragTransfer.overAccountId,
+                }
+              : null
+          }
+          onDriveDragOver={handleDriveDragOver}
+          onDriveDragLeave={handleDriveDragLeave}
+          onDriveDrop={handleDriveDrop}
         />
 
         <section className="flex h-[calc(100vh-2.75rem)] min-w-0 flex-col overflow-hidden">
@@ -2639,11 +2771,7 @@ export default function App() {
               x={contextMenu.x}
               y={contextMenu.y}
               account={accountForRow(contextMenu.row)}
-              transferTargets={
-                isFileBrowseRow(contextMenu.row)
-                  ? targetAccountsForTransfer([contextMenu.row.entry.node])
-                  : []
-              }
+              transferTargets={targetAccountsForTransferRows([contextMenu.row])}
               onClose={() => setContextMenu(null)}
               onOpen={() => {
                 setContextMenu(null);
@@ -2703,11 +2831,9 @@ export default function App() {
           {transferDialog ? (
             <TransferDialog
               rows={transferDialog.rows.length > 0 ? transferDialog.rows : selectedRows}
-              targetAccounts={
-                targetAccountsForTransfer(
-                  transferRowsToDriveFiles(transferDialog.rows.length > 0 ? transferDialog.rows : selectedRows) ?? [],
-                )
-              }
+              targetAccounts={targetAccountsForTransferRows(
+                transferDialog.rows.length > 0 ? transferDialog.rows : selectedRows,
+              )}
               onClose={() => setTransferDialog(null)}
               onTransfer={(targetAccount) => {
                 void handleTransferRowsToAccount(
@@ -2715,6 +2841,15 @@ export default function App() {
                   targetAccount,
                 );
               }}
+            />
+          ) : null}
+
+          {dragTransfer ? (
+            <DragTransferPreview
+              rows={dragTransfer.rows}
+              x={dragTransfer.x}
+              y={dragTransfer.y}
+              hasTargets={dragTransfer.targetAccountIds.length > 0}
             />
           ) : null}
 
@@ -2882,6 +3017,9 @@ export default function App() {
                       onSelectRow={handleBrowseRowPress}
                       onOpenRow={openBrowseRow}
                       onContextMenu={openBrowseRowContextMenu}
+                      onDragStart={handleBrowseRowDragStart}
+                      onDrag={handleBrowseRowDrag}
+                      onDragEnd={handleBrowseRowDragEnd}
                     />
                   ) : (
                     <DriveTable
@@ -2908,6 +3046,9 @@ export default function App() {
                       onSelectRow={handleBrowseRowPress}
                       onOpenRow={openBrowseRow}
                       onContextMenu={openBrowseRowContextMenu}
+                      onDragStart={handleBrowseRowDragStart}
+                      onDrag={handleBrowseRowDrag}
+                      onDragEnd={handleBrowseRowDragEnd}
                     />
                   )}
                 </div>
@@ -3751,7 +3892,13 @@ function TransferDialog({
   onTransfer: (targetAccount: AccountState) => void;
 }) {
   const fileCount = rows.filter(isFileBrowseRow).length;
-  const title = fileCount === 1 ? rows.find(isFileBrowseRow)?.name ?? 'Selected file' : `${fileCount} files`;
+  const folderCount = rows.length - fileCount;
+  const title =
+    rows.length === 1
+      ? rows[0]?.name ?? 'Selected item'
+      : folderCount > 0
+        ? `${rows.length} selected items`
+        : `${fileCount} files`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/62 px-4 backdrop-blur-sm">
@@ -3806,6 +3953,61 @@ function TransferDialog({
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+function DragTransferPreview({
+  rows,
+  x,
+  y,
+  hasTargets,
+}: {
+  rows: BrowseRow[];
+  x: number;
+  y: number;
+  hasTargets: boolean;
+}) {
+  const title = rows.length === 1 ? rows[0]?.name ?? 'Selected item' : `${rows.length} selected items`;
+  const stackCount = Math.min(rows.length, 3);
+
+  return (
+    <div
+      className="pointer-events-none fixed z-[70]"
+      style={{
+        left: x + 16,
+        top: y + 16,
+      }}
+    >
+      <div className="relative">
+        {Array.from({ length: stackCount - 1 }).map((_, index) => (
+          <div
+            key={index}
+            className="absolute h-14 w-[236px] rounded-2xl border border-cyan-100/10 bg-[#0b2135]/88 shadow-[0_14px_40px_rgba(0,0,0,0.28)]"
+            style={{
+              transform: `translate(${(index + 1) * 6}px, ${(index + 1) * 6}px)`,
+            }}
+          />
+        ))}
+        <div
+          className={[
+            'relative flex h-14 w-[236px] items-center gap-3 rounded-2xl border px-3 shadow-[0_18px_54px_rgba(0,0,0,0.36)] backdrop-blur-2xl',
+            hasTargets
+              ? 'border-cyan-200/20 bg-[#071527]/92 text-slate-100'
+              : 'border-red-200/20 bg-[#1b1020]/92 text-red-100',
+          ].join(' ')}
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-300/15">
+            {rows.length > 1 ? <Copy className="h-4 w-4" /> : <ArrowRightLeft className="h-4 w-4" />}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold">{title}</span>
+            <span className="mt-0.5 block truncate text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+              {hasTargets ? 'Drop on a destination drive' : 'No destination drive'}
+            </span>
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -4592,7 +4794,7 @@ function RowContextMenu({
       <div
         ref={menuRef}
         data-custom-context-menu="true"
-        className="glass-panel absolute w-[240px] overflow-hidden rounded-2xl border border-cyan-100/10 bg-[#071527]/96 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.32)]"
+        className="glass-panel absolute w-[240px] overflow-visible rounded-2xl border border-cyan-100/10 bg-[#071527]/96 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.32)]"
         style={{ left: x, top: y }}
         onClick={(event) => event.stopPropagation()}
       >
@@ -4643,6 +4845,23 @@ function RowContextMenu({
               <ContextMenuButton icon={<FolderOpen className="h-4 w-4" />} label="Open folder" onClick={onOpen} />
               <ContextMenuButton icon={<Upload className="h-4 w-4" />} label="Upload files" onClick={onUploadInto} />
               <ContextMenuButton icon={<FolderPlus className="h-4 w-4" />} label="New folder" onClick={onCreateInside} />
+              <ContextMenuFlyout
+                icon={<ArrowRightLeft className="h-4 w-4" />}
+                label="Transfer"
+                disabled={transferTargets.length === 0}
+                fallbackLabel="Choose drive..."
+                onFallback={onTransfer}
+              >
+                {transferTargets.map((targetAccount) => (
+                  <ContextMenuButton
+                    key={targetAccount.accountId}
+                    icon={<HardDrive className="h-4 w-4" />}
+                    label={`${targetAccount.label} ${targetAccount.displayName}`}
+                    description={targetAccount.email}
+                    onClick={() => onTransferTo(targetAccount)}
+                  />
+                ))}
+              </ContextMenuFlyout>
               <ContextMenuDivider />
               {!isRootFolder ? (
                 <ContextMenuButton icon={<Pencil className="h-4 w-4" />} label="Rename" onClick={onRename} />

@@ -1,3 +1,4 @@
+import type { DragEvent } from 'react';
 import type { BrowseRow } from '../domain/browseModel';
 import { gridCardMetrics, gridColumnsStyle } from '../domain/gridPresentation';
 import type { GridThumbnailState, ThemeMode, ThemeVariant } from '../domain/types';
@@ -15,6 +16,9 @@ interface DriveGridProps {
   onSelectRow: (row: BrowseRow) => void;
   onOpenRow: (row: BrowseRow) => void;
   onContextMenu: (row: BrowseRow, position: { x: number; y: number }) => void;
+  onDragStart: (row: BrowseRow, event: DragEvent<HTMLElement>) => void;
+  onDrag: (event: DragEvent<HTMLElement>) => void;
+  onDragEnd: () => void;
 }
 
 function humanizeBytes(bytes: number): string {
@@ -58,6 +62,9 @@ export function DriveGrid({
   onSelectRow,
   onOpenRow,
   onContextMenu,
+  onDragStart,
+  onDrag,
+  onDragEnd,
 }: DriveGridProps) {
   if (rows.length === 0) {
     return (
@@ -78,12 +85,16 @@ export function DriveGrid({
           <article
             key={row.id}
             data-drive-context-target="true"
+            draggable
             className={[
               'glass-panel group relative overflow-hidden rounded-xl shadow-glow transition duration-200',
               isSelected
                 ? 'ring-2 ring-cyan-300/70 shadow-[0_0_28px_rgba(0,240,255,0.18)]'
                 : 'hover:-translate-y-0.5 hover:bg-white/[0.055] hover:rounded-2xl',
             ].join(' ')}
+            onDragStart={(event) => onDragStart(row, event)}
+            onDrag={onDrag}
+            onDragEnd={onDragEnd}
             onContextMenuCapture={(event) => {
               event.preventDefault();
               event.stopPropagation();

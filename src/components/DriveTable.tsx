@@ -1,6 +1,7 @@
 import {
   ChevronRight,
 } from 'lucide-react';
+import type { DragEvent } from 'react';
 import type { BrowseRow } from '../domain/browseModel';
 import type { GridThumbnailState, SortField, SortModel, ThemeMode, ThemeVariant } from '../domain/types';
 import { thumbnailToneClasses } from '../domain/gridPresentation';
@@ -19,6 +20,9 @@ interface DriveTableProps {
   onSelectRow: (row: BrowseRow) => void;
   onOpenRow: (row: BrowseRow) => void;
   onContextMenu: (row: BrowseRow, position: { x: number; y: number }) => void;
+  onDragStart: (row: BrowseRow, event: DragEvent<HTMLTableRowElement>) => void;
+  onDrag: (event: DragEvent<HTMLTableRowElement>) => void;
+  onDragEnd: () => void;
 }
 
 function humanizeBytes(bytes: number): string {
@@ -86,6 +90,9 @@ export function DriveTable({
   onSelectRow,
   onOpenRow,
   onContextMenu,
+  onDragStart,
+  onDrag,
+  onDragEnd,
 }: DriveTableProps) {
   return (
     <section className="overflow-hidden">
@@ -140,10 +147,14 @@ export function DriveTable({
                   <tr
                     key={row.id}
                     data-drive-context-target="true"
+                    draggable
                     className={[
                       'group cursor-pointer transition duration-200',
                       isSelected ? 'bg-cyan-400/10 ring-1 ring-inset ring-cyan-300/20' : '',
                     ].join(' ')}
+                    onDragStart={(event) => onDragStart(row, event)}
+                    onDrag={onDrag}
+                    onDragEnd={onDragEnd}
                     onContextMenuCapture={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
