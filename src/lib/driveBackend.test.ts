@@ -360,6 +360,21 @@ describe('loadVirtualDriveState', () => {
     });
   });
 
+  it('skips desktop session commands outside the Tauri runtime', async () => {
+    vi.stubGlobal('window', {});
+    const invoke = vi.fn();
+
+    const sessionSummary = await setDesktopAppSession('access-token');
+    await clearDesktopAppSession();
+
+    expect(sessionSummary).toEqual({
+      userId: '',
+      email: '',
+      emailVerified: true,
+    });
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it('passes a captcha token into desktop Google auth when supplied', async () => {
     const invoke = vi.fn().mockResolvedValue({
       accessToken: 'oauth-access',

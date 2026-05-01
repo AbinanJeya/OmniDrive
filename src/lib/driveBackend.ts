@@ -143,6 +143,14 @@ export async function setDesktopAppSession(
   const actualInvoke = typeof supabaseConfig === 'function' ? supabaseConfig : invoke;
   const actualConfig = typeof supabaseConfig === 'function' ? undefined : supabaseConfig;
 
+  if (actualInvoke === tauriInvoke && !hasTauriRuntime()) {
+    return {
+      userId: '',
+      email: '',
+      emailVerified: true,
+    };
+  }
+
   const args: Record<string, unknown> = {
     accessToken,
   };
@@ -157,6 +165,10 @@ export async function setDesktopAppSession(
 export async function clearDesktopAppSession(
   invoke: TauriInvokeFn = tauriInvoke,
 ): Promise<void> {
+  if (invoke === tauriInvoke && !hasTauriRuntime()) {
+    return;
+  }
+
   await invoke('clear_app_session');
 }
 

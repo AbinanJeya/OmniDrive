@@ -124,6 +124,11 @@ import {
   signUpWithPassword,
   type StoredAuthSession,
 } from './lib/authClient';
+import {
+  fetchCloudLinkedAccounts,
+  mergeCloudAccountsIntoDriveState,
+  syncCloudLinkedAccounts,
+} from './lib/cloudAccounts';
 import { validateSignUpForm } from './lib/authValidation';
 import { toUserFacingErrorMessage } from './lib/errorMessage';
 
@@ -1050,7 +1055,22 @@ export default function App() {
     setErrorMessage(null);
 
     try {
-      const nextState = await loadVirtualDriveState();
+      const localState = await loadVirtualDriveState();
+      let nextState = localState;
+      if (authSession) {
+        try {
+          const cloudAccounts = await fetchCloudLinkedAccounts(supabaseConfig, authSession.accessToken);
+          nextState = mergeCloudAccountsIntoDriveState(localState, cloudAccounts);
+          await syncCloudLinkedAccounts(supabaseConfig, authSession.accessToken, localState.accounts);
+        } catch (cloudError) {
+          setNoticeMessage(
+            toUserFacingErrorMessage(
+              cloudError,
+              'Cloud linked account sync is not configured yet. Local accounts are still available on this device.',
+            ),
+          );
+        }
+      }
       startTransition(() => {
         setDriveState(nextState);
       });
