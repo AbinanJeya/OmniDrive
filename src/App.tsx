@@ -1,5 +1,5 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
-import type { DragEvent, ReactNode, RefObject } from 'react';
+import type { PointerEvent as ReactPointerEvent, ReactNode, RefObject } from 'react';
 import {
   ArrowRightLeft,
   ArrowDown,
@@ -226,6 +226,13 @@ interface DragTransferState {
   y: number;
   targetAccountIds: string[];
   overAccountId?: string | null;
+}
+
+interface PendingTransferDragState {
+  rows: BrowseRow[];
+  startX: number;
+  startY: number;
+  targetAccountIds: string[];
 }
 
 type AuthScreenMode = 'signIn' | 'signUp' | 'forgotPassword' | 'verifyEmail';
@@ -476,6 +483,16 @@ function groupPlannedTransferItems(items: PlannedTransferItem[]): Array<{
   }));
 }
 
+function findDriveDropAccountIdAtPoint(x: number, y: number): string | null {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  const element = document.elementFromPoint(x, y);
+  const dropTarget = element?.closest<HTMLElement>('[data-drive-drop-account-id]');
+  return dropTarget?.dataset.driveDropAccountId ?? null;
+}
+
 function parentFolderPath(virtualPath: string): string {
   if (virtualPath === '/' || !virtualPath.startsWith('/')) {
     return '/';
@@ -590,6 +607,9 @@ export default function App() {
     errorMessage: string | null;
   } | null>(null);
   const contextMenuRef = useRef<HTMLDivElement>(null);
+  const pendingTransferDragRef = useRef<PendingTransferDragState | null>(null);
+  const dragTransferRef = useRef<DragTransferState | null>(null);
+  const suppressNextBrowseClickRef = useRef(false);
   const isWorkspaceUnlocked = authStatus === 'ready' && Boolean(authSession);
 
   useEffect(() => {
@@ -681,6 +701,87 @@ export default function App() {
     void refreshDriveState();
     void refreshLocalFoundation();
   }, [isWorkspaceUnlocked]);
+
+  useEffect(() => {
+    dragTransferRef.current = dragTransfer;
+  }, [dragTransfer]);
+
+  useEffect(() => {
+    const dragThresholdPx = 6;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const pendingDrag = pendingTransferDragRef.current;
+      if (!pendingDrag) {
+        return;
+      }
+
+      const distanceX = event.clientX - pendingDrag.startX;
+      const distanceY = event.clientY - pendingDrag.startY;
+      const isDragging = Boolean(dragTransferRef.current);
+      if (!isDragging && Math.hypot(distanceX, distanceY) < dragThresholdPx) {
+        return;
+      }
+
+      event.preventDefault();
+      const hoveredAccountId = findDriveDropAccountIdAtPoint(event.clientX, event.clientY);
+      const overAccountId =
+        hoveredAccountId && pendingDrag.targetAccountIds.includes(hoveredAccountId)
+          ? hoveredAccountId
+          : null;
+      const nextDrag: DragTransferState = {
+        rows: pendingDrag.rows,
+        x: event.clientX,
+        y: event.clientY,
+        targetAccountIds: pendingDrag.targetAccountIds,
+        overAccountId,
+      };
+      dragTransferRef.current = nextDrag;
+      setDragTransfer(nextDrag);
+    };
+
+    const finishPointerDrag = (event: PointerEvent) => {
+      const currentDrag = dragTransferRef.current;
+      pendingTransferDragRef.current = null;
+
+      if (!currentDrag) {
+        return;
+      }
+
+      suppressNextBrowseClickRef.current = true;
+      window.setTimeout(() => {
+        suppressNextBrowseClickRef.current = false;
+      }, 0);
+
+      const droppedAccountId = findDriveDropAccountIdAtPoint(event.clientX, event.clientY);
+      const targetAccount =
+        droppedAccountId && currentDrag.targetAccountIds.includes(droppedAccountId)
+          ? driveState.accounts.find((account) => account.accountId === droppedAccountId)
+          : null;
+
+      dragTransferRef.current = null;
+      setDragTransfer(null);
+
+      if (!targetAccount) {
+        return;
+      }
+
+      startTransition(() => {
+        setSelectedRowIds(currentDrag.rows.map((row) => row.id));
+        setIsSelectMode(currentDrag.rows.length > 1);
+      });
+      void handleTransferRowsToAccount(currentDrag.rows, targetAccount);
+    };
+
+    document.addEventListener('pointermove', handlePointerMove, { passive: false });
+    document.addEventListener('pointerup', finishPointerDrag);
+    document.addEventListener('pointercancel', finishPointerDrag);
+
+    return () => {
+      document.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('pointerup', finishPointerDrag);
+      document.removeEventListener('pointercancel', finishPointerDrag);
+    };
+  }, [driveState.accounts, driveState.nodes, route.folderPath]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -2299,6 +2400,10 @@ export default function App() {
   }
 
   function handleBrowseRowPress(row: BrowseRow) {
+    if (suppressNextBrowseClickRef.current) {
+      return;
+    }
+
     setContextMenu(null);
     if (isSelectMode) {
       toggleBrowseRowSelection(row);
@@ -2338,91 +2443,24 @@ export default function App() {
     return [row];
   }
 
-  function handleBrowseRowDragStart(row: BrowseRow, event: DragEvent<HTMLElement>) {
+  function handleBrowseRowPointerDown(row: BrowseRow, event: ReactPointerEvent<HTMLElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    if ((event.target as HTMLElement).closest('input, textarea, select')) {
+      return;
+    }
+
     const rows = rowsForDrag(row);
     const targetAccounts = targetAccountsForTransferRows(rows);
-    event.dataTransfer.effectAllowed = targetAccounts.length > 0 ? 'copy' : 'none';
-    event.dataTransfer.setData('application/x-omnidrive-rows', rows.map((item) => item.id).join(','));
-    event.dataTransfer.setData('text/plain', rows.length === 1 ? rows[0]?.name ?? '' : `${rows.length} selected items`);
-
     setContextMenu(null);
-    setDragTransfer({
+    pendingTransferDragRef.current = {
       rows,
-      x: event.clientX,
-      y: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY,
       targetAccountIds: targetAccounts.map((account) => account.accountId),
-      overAccountId: null,
-    });
-  }
-
-  function handleBrowseRowDrag(event: DragEvent<HTMLElement>) {
-    if (event.clientX === 0 && event.clientY === 0) {
-      return;
-    }
-
-    setDragTransfer((current) =>
-      current
-        ? {
-            ...current,
-            x: event.clientX,
-            y: event.clientY,
-          }
-        : current,
-    );
-  }
-
-  function handleBrowseRowDragEnd() {
-    setDragTransfer(null);
-  }
-
-  function handleDriveDragOver(accountId: string, event: DragEvent<HTMLDivElement>) {
-    if (!dragTransfer?.targetAccountIds.includes(accountId)) {
-      return;
-    }
-
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'copy';
-    setDragTransfer((current) =>
-      current
-        ? {
-            ...current,
-            x: event.clientX,
-            y: event.clientY,
-            overAccountId: accountId,
-          }
-        : current,
-    );
-  }
-
-  function handleDriveDragLeave(accountId: string) {
-    setDragTransfer((current) =>
-      current?.overAccountId === accountId
-        ? {
-            ...current,
-            overAccountId: null,
-          }
-        : current,
-    );
-  }
-
-  function handleDriveDrop(accountId: string, event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    const currentDrag = dragTransfer;
-    setDragTransfer(null);
-    if (!currentDrag?.targetAccountIds.includes(accountId)) {
-      return;
-    }
-
-    const targetAccount = driveState.accounts.find((account) => account.accountId === accountId);
-    if (!targetAccount) {
-      return;
-    }
-
-    startTransition(() => {
-      setSelectedRowIds(currentDrag.rows.map((row) => row.id));
-      setIsSelectMode(currentDrag.rows.length > 1);
-    });
-    void handleTransferRowsToAccount(currentDrag.rows, targetAccount);
+    };
   }
 
   function enterSelectMode() {
@@ -2541,15 +2579,11 @@ export default function App() {
           dragTransfer={
             dragTransfer
               ? {
-                  rowCount: dragTransfer.rows.length,
                   targetAccountIds: dragTransfer.targetAccountIds,
                   overAccountId: dragTransfer.overAccountId,
                 }
               : null
           }
-          onDriveDragOver={handleDriveDragOver}
-          onDriveDragLeave={handleDriveDragLeave}
-          onDriveDrop={handleDriveDrop}
         />
 
         <section className="flex h-[calc(100vh-2.75rem)] min-w-0 flex-col overflow-hidden">
@@ -3017,9 +3051,7 @@ export default function App() {
                       onSelectRow={handleBrowseRowPress}
                       onOpenRow={openBrowseRow}
                       onContextMenu={openBrowseRowContextMenu}
-                      onDragStart={handleBrowseRowDragStart}
-                      onDrag={handleBrowseRowDrag}
-                      onDragEnd={handleBrowseRowDragEnd}
+                      onPointerDown={handleBrowseRowPointerDown}
                     />
                   ) : (
                     <DriveTable
@@ -3046,9 +3078,7 @@ export default function App() {
                       onSelectRow={handleBrowseRowPress}
                       onOpenRow={openBrowseRow}
                       onContextMenu={openBrowseRowContextMenu}
-                      onDragStart={handleBrowseRowDragStart}
-                      onDrag={handleBrowseRowDrag}
-                      onDragEnd={handleBrowseRowDragEnd}
+                      onPointerDown={handleBrowseRowPointerDown}
                     />
                   )}
                 </div>
@@ -4958,7 +4988,7 @@ function ContextMenuFlyout({
       </button>
 
       {isOpen && !disabled ? (
-        <div className="glass-panel absolute left-[calc(100%+0.45rem)] top-0 z-10 w-[260px] rounded-2xl border border-cyan-100/10 bg-[#071527]/96 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.32)]">
+        <div className="glass-panel absolute left-[calc(100%-0.125rem)] top-0 z-10 w-[260px] rounded-2xl border border-cyan-100/10 bg-[#071527]/96 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.32)]">
           <div className="border-b border-cyan-100/[0.06] px-3 py-2">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200">
               Send to drive
@@ -4969,7 +4999,7 @@ function ContextMenuFlyout({
       ) : null}
 
       {isOpen && disabled ? (
-        <div className="glass-panel absolute left-[calc(100%+0.45rem)] top-0 z-10 w-[230px] rounded-2xl border border-cyan-100/10 bg-[#071527]/96 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.32)]">
+        <div className="glass-panel absolute left-[calc(100%-0.125rem)] top-0 z-10 w-[230px] rounded-2xl border border-cyan-100/10 bg-[#071527]/96 p-2 shadow-[0_20px_60px_rgba(0,0,0,0.32)]">
           <ContextMenuButton
             icon={<ArrowRightLeft className="h-4 w-4" />}
             label={fallbackLabel}

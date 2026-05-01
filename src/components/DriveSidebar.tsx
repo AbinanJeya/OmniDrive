@@ -10,7 +10,7 @@ import {
   Plus,
   Search,
 } from 'lucide-react';
-import type { ComponentType, DragEvent, ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 import { computeStorageSummary } from '../domain/driveView';
 import type { AccountState, BrowseCategory, BrowseScope, FileCategory } from '../domain/types';
 
@@ -26,13 +26,9 @@ interface DriveSidebarProps {
   onConnectPhotosAccount: () => void;
   onDisconnectAccount: (accountId: string, label: string) => void;
   dragTransfer?: {
-    rowCount: number;
     targetAccountIds: string[];
     overAccountId?: string | null;
   } | null;
-  onDriveDragOver?: (accountId: string, event: DragEvent<HTMLDivElement>) => void;
-  onDriveDragLeave?: (accountId: string) => void;
-  onDriveDrop?: (accountId: string, event: DragEvent<HTMLDivElement>) => void;
 }
 
 const CATEGORY_ITEMS: Array<{
@@ -91,9 +87,6 @@ export function DriveSidebar({
   onConnectPhotosAccount,
   onDisconnectAccount,
   dragTransfer,
-  onDriveDragOver,
-  onDriveDragLeave,
-  onDriveDrop,
 }: DriveSidebarProps) {
   const storageSummary = computeStorageSummary(accounts, { kind: 'all' });
   const totalBytes = storageSummary.totalBytes;
@@ -146,9 +139,7 @@ export function DriveSidebar({
             return (
             <div
               key={account.accountId}
-              onDragOver={(event) => onDriveDragOver?.(account.accountId, event)}
-              onDragLeave={() => onDriveDragLeave?.(account.accountId)}
-              onDrop={(event) => onDriveDrop?.(account.accountId, event)}
+              data-drive-drop-account-id={account.accountId}
               className={[
                 'rounded-2xl transition',
                 isDragTarget ? 'bg-cyan-400/[0.06] ring-1 ring-cyan-300/15' : 'hover:bg-white/[0.035]',
